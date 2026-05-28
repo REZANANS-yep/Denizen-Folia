@@ -255,6 +255,14 @@ public class DenizenCoreImplementation implements DenizenImplementation {
     }
 
     @Override
+    public boolean isDenizenMainThread() {
+        // On Folia there is no single fixed main thread: the script engine is driven from the global region tick
+        // (see Denizen#onEnable's global-region runAtFixedRate). The global tick thread is the one logical thread on
+        // which all DenizenCore queues run serially, so it is what the engine must treat as "main".
+        return Bukkit.isGlobalTickThread();
+    }
+
+    @Override
     public boolean canWriteToFile(File f) {
         return Utilities.canWriteToFile(f);
     }

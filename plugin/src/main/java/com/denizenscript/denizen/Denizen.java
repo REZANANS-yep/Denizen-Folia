@@ -391,8 +391,8 @@ public class Denizen extends JavaPlugin {
         }
         Debug.log("Final full init took <A>" + (System.currentTimeMillis() - startTime) + "<W>ms.");
         final boolean hadCitizensBork = citizensBork;
-        // Run everything else on the first server tick
-        Bukkit.getScheduler().scheduleSyncDelayedTask(this, () -> {
+        // Run everything else on the first server tick (global region tick on Folia).
+        FoliaScheduler.runGlobalDelayed(() -> {
             hasTickedOnce = true;
             try {
                 if (hadCitizensBork) {
@@ -425,7 +425,9 @@ public class Denizen extends JavaPlugin {
                     Debug.echoError("Don't screw with bad config values.");
                     Bukkit.shutdown();
                 }
-                Bukkit.getScheduler().scheduleSyncRepeatingTask(Denizen.this, () -> {
+                // Drive the entire DenizenCore script engine from the global region tick. This is the single
+                // logical "main" thread on Folia - all script queues run serially here (see DenizenCoreImplementation#isDenizenMainThread).
+                FoliaScheduler.runGlobalRepeating(() -> {
                     DenizenCore.tick(50); // Sadly, minecraft has no delta timing, so a tick is always 50ms.
                 }, 1, 1);
                 InventoryTag.setupInventoryTracker();
@@ -439,39 +441,30 @@ public class Denizen extends JavaPlugin {
                 Debug.echoError(ex);
             }
         }, 1);
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                if (Settings.canRecordStats()) {
-                    StatsRecord.trigger();
+        FoliaScheduler.runGlobalRepeating(() -> {
+            if (Settings.canRecordStats()) {
+                StatsRecord.trigger();
+            }
+        }, 100, 20 * 60 * 60);
+        FoliaScheduler.runGlobalRepeating(() -> {
+            PlayerFlagHandler.cleanCache();
+        }, 100, 20 * 60);
+        FoliaScheduler.runGlobalRepeating(() -> {
+            if (!StrongWarning.recentWarnings.isEmpty()) {
+                StringBuilder warnText = new StringBuilder();
+                warnText.append(ChatColor.YELLOW).append("[Denizen] ").append(ChatColor.RED).append("Recent strong system warnings, scripters need to address ASAP (check earlier console logs for details):");
+                for (StrongWarning warning : StrongWarning.recentWarnings.keySet()) {
+                    warnText.append("\n- ").append(warning.message);
                 }
-            }
-        }.runTaskTimer(this, 100, 20 * 60 * 60);
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                PlayerFlagHandler.cleanCache();
-            }
-        }.runTaskTimer(this, 100, 20 * 60);
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                if (!StrongWarning.recentWarnings.isEmpty()) {
-                    StringBuilder warnText = new StringBuilder();
-                    warnText.append(ChatColor.YELLOW).append("[Denizen] ").append(ChatColor.RED).append("Recent strong system warnings, scripters need to address ASAP (check earlier console logs for details):");
-                    for (StrongWarning warning : StrongWarning.recentWarnings.keySet()) {
-                        warnText.append("\n- ").append(warning.message);
-                    }
-                    StrongWarning.recentWarnings.clear();
-                    Bukkit.getConsoleSender().sendMessage(warnText.toString());
-                    for (Player player : Bukkit.getOnlinePlayers()) {
-                        if (player.isOp()) {
-                            player.sendMessage(warnText.toString());
-                        }
+                StrongWarning.recentWarnings.clear();
+                Bukkit.getConsoleSender().sendMessage(warnText.toString());
+                for (Player player : Bukkit.getOnlinePlayers()) {
+                    if (player.isOp()) {
+                        player.sendMessage(warnText.toString());
                     }
                 }
             }
-        }.runTaskTimer(this, 100, 20 * 60 * 5);
+        }, 100, 20 * 60 * 5);
         Bukkit.getPluginManager().registerEvents(new WorldListChangeTracker(), this);
     }
 
@@ -494,7 +487,7 @@ public class Denizen extends JavaPlugin {
         InventoryScriptHelper.savePlayerInventories();
         triggerRegistry.disableCoreMembers();
         getLogger().log(Level.INFO, " v" + getDescription().getVersion() + " disabled.");
-        Bukkit.getServer().getScheduler().cancelTasks(this);
+        FoliaScheduler.cancelAll();
         HandlerList.unregisterAll(this);
         saveSaves(true);
         worldFlags.shutdown();
