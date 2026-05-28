@@ -13,6 +13,17 @@
 >
 > Requires the matching DenizenCore Folia fork. Build with Java 21 + a Spigot 1.21.11 server jar (BuildTools).
 
+<p align="center">
+  <a href="https://pterohost.com">
+    <img src="https://pterohost.com/images/branding/logo-sm.webp" alt="Pterohost" height="64">
+  </a>
+</p>
+<p align="center">
+  <b>Этот форк развивается на <a href="https://pterohost.com">Pterohost</a></b><br>
+  Игровой хостинг с поддержкой Folia, Paper и Pterodactyl-панелью.<br>
+  <i>Developed on <a href="https://pterohost.com">Pterohost</a> - game server hosting with Folia/Paper support.</i>
+</p>
+
 The Denizen Scripting Language - Spigot Impl
 --------------------------------------------
 
