@@ -33,6 +33,12 @@ public class DenizenCommandSender implements ConsoleCommandSender {
     }
 
     @Override
+    public net.kyori.adventure.text.Component name() {
+        // paper-api adds an abstract Adventure name() to CommandSender (absent from spigot-api).
+        return net.kyori.adventure.text.Component.text("DenizenCommandSender");
+    }
+
+    @Override
     public void sendMessage(String s) {
         output.add(s);
         if (!silent) {

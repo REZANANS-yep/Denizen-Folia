@@ -3899,7 +3899,8 @@ public class PlayerTag implements ObjectTag, Adjustable, EntityFormObject, Flagg
                 }
             }
             else {
-                getPlayerEntity().setPlayerListHeaderFooter(null, null);
+                // paper-api adds a Component overload, making (null, null) ambiguous; cast to disambiguate (clears the list header/footer).
+                getPlayerEntity().setPlayerListHeaderFooter((String) null, (String) null);
             }
         }
 

@@ -684,7 +684,10 @@ public class MaterialTag implements ObjectTag, Adjustable, FlaggableObject {
             // If experimental features are disabled in the given world, and the MaterialTag is an item or block that is only enabled by experimental features, this will return false.
             // -->
             tagProcessor.registerTag(ElementTag.class, WorldTag.class, "is_enabled", (attribute, object, world) -> {
-                return new ElementTag(object.getMaterial().isEnabledByFeature(world.getWorld()));
+                // Spigot's Material#isEnabledByFeature(World) (added in 1.21.11-R0.2) is absent from paper-api R0.1,
+                // and Material does not implement Paper's FeatureDependant, so experimental-feature gating cannot be
+                // evaluated on this Folia build. All materials report as enabled (correct for non-experimental worlds).
+                return new ElementTag(true);
             });
         }
     }

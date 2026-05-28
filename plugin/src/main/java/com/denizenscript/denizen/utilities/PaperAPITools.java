@@ -243,12 +243,14 @@ public class PaperAPITools {
     }
 
     public String getCopperGolemState(CopperGolem copperGolem) {
-        return copperGolem.getWeatherState().name();
+        // paper-api exposes the copper golem's oxidation as getWeatheringState()/WeatheringCopperState
+        // (Spigot R0.2 used getWeatherState()/CopperGolem.CopperWeatherState); enum names match (UNAFFECTED/EXPOSED/WEATHERED/OXIDIZED).
+        return copperGolem.getWeatheringState().name();
     }
 
     public void setCopperGolemState(ElementTag variant, CopperGolem copperGolem, Mechanism mechanism) {
-        if (mechanism.requireEnum(CopperGolem.CopperWeatherState.class)) {
-            copperGolem.setWeatherState(variant.asEnum(CopperGolem.CopperWeatherState.class));
+        if (mechanism.requireEnum(io.papermc.paper.world.WeatheringCopperState.class)) {
+            copperGolem.setWeatheringState(variant.asEnum(io.papermc.paper.world.WeatheringCopperState.class));
         }
     }
 }
