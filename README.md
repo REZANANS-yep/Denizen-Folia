@@ -21,8 +21,11 @@
 <p align="center">
   <b>Этот форк развивается на <a href="https://pterohost.com">Pterohost</a></b><br>
   Игровой хостинг с поддержкой Folia, Paper и панелью YourControl.<br>
-  💬 <a href="https://discord.gg/BayzJzArBa">Discord-сервер Pterohost</a><br>
   <i>Developed on <a href="https://pterohost.com">Pterohost</a> - game server hosting with Folia/Paper support.</i>
+</p>
+<p align="center">
+  <a href="https://discord.gg/BayzJzArBa"><img src="https://avatars.githubusercontent.com/u/93002293?s=280&v=4" alt="Discord" width="48" height="48"></a><br>
+  <a href="https://discord.gg/BayzJzArBa">Discord-сервер Pterohost</a>
 </p>
 
 The Denizen Scripting Language - Spigot Impl
