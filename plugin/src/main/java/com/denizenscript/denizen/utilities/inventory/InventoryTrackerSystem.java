@@ -3,6 +3,7 @@ package com.denizenscript.denizen.utilities.inventory;
 import com.denizenscript.denizen.Denizen;
 import com.denizenscript.denizen.objects.InventoryTag;
 import com.denizenscript.denizen.scripts.containers.core.InventoryScriptHelper;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import org.bukkit.Bukkit;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -56,7 +57,8 @@ public class InventoryTrackerSystem implements Listener {
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerCloseInventory(InventoryCloseEvent event) {
         Inventory inv = event.getInventory();
-        Bukkit.getScheduler().scheduleSyncDelayedTask(Denizen.getInstance(), () -> {
+        // runGlobalDelayed: pure server-side inventory tracking map maintenance (no world/entity mutation), 1 tick later.
+        FoliaScheduler.runGlobalDelayed(() -> {
             if (inv.getViewers().isEmpty()) {
                 InventoryTag removed = retainedInventoryLinks.remove(inv);
                 if (removed != null && removed.uniquifier != null) {
@@ -87,7 +89,8 @@ public class InventoryTrackerSystem implements Listener {
     }
 
     public static void setup() {
-        Bukkit.getScheduler().scheduleSyncRepeatingTask(Denizen.getInstance(), () -> {
+        // runGlobalRepeating: pure server-side inventory tracking map upkeep every 20 ticks (no world/entity mutation).
+        FoliaScheduler.runGlobalRepeating(() -> {
             if (idTrackedInventories.size() > 300) {
                 idTrackedInventories.clear();
                 for (InventoryTag temp : temporaryInventoryLinks.values()) {

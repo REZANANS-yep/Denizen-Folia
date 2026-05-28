@@ -3,6 +3,7 @@ package com.denizenscript.denizen.utilities.entity;
 import com.denizenscript.denizen.Denizen;
 import com.denizenscript.denizen.nms.NMSHandler;
 import com.denizenscript.denizen.objects.EntityTag;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.utilities.packets.NetworkInterceptHelper;
 import com.denizenscript.denizencore.utilities.CoreUtilities;
 import org.bukkit.Bukkit;
@@ -11,7 +12,6 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
-import org.bukkit.scheduler.BukkitRunnable;
 
 import java.util.*;
 
@@ -171,28 +171,27 @@ public class HideEntitiesHelper {
             if (map == null) {
                 return;
             }
-            new BukkitRunnable() {
-                @Override
-                public void run() {
-                    if (pl.isOnline()) {
-                        if (map.matchersHidden != null) {
-                            for (Entity entity : pl.getWorld().getEntities()) {
-                                if (map.shouldHide(entity)) {
-                                    NMSHandler.entityHelper.sendHidePacket(pl, entity);
-                                }
+            // runOnEntityDelayed: this enforces hides for the single joining player (reads their world & sends them packets),
+            // so it runs on that player's owning region thread 5 ticks after join.
+            FoliaScheduler.runOnEntityDelayed(pl, () -> {
+                if (pl.isOnline()) {
+                    if (map.matchersHidden != null) {
+                        for (Entity entity : pl.getWorld().getEntities()) {
+                            if (map.shouldHide(entity)) {
+                                NMSHandler.entityHelper.sendHidePacket(pl, entity);
                             }
                         }
-                        else {
-                            for (UUID id : map.entitiesHidden) {
-                                Entity ent = Bukkit.getEntity(id);
-                                if (ent != null) {
-                                    NMSHandler.entityHelper.sendHidePacket(pl, ent);
-                                }
+                    }
+                    else {
+                        for (UUID id : map.entitiesHidden) {
+                            Entity ent = Bukkit.getEntity(id);
+                            if (ent != null) {
+                                NMSHandler.entityHelper.sendHidePacket(pl, ent);
                             }
                         }
                     }
                 }
-            }.runTaskLater(Denizen.getInstance(), 5);
+            }, null, 5);
         }
     }
 

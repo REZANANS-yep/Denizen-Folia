@@ -3,6 +3,7 @@ package com.denizenscript.denizen.tags.core;
 import com.denizenscript.denizen.Denizen;
 import com.denizenscript.denizen.objects.PlayerTag;
 import com.denizenscript.denizen.utilities.Settings;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.tags.BukkitTagContext;
 import com.denizenscript.denizencore.tags.TagManager;
 import org.bukkit.Bukkit;
@@ -51,7 +52,9 @@ public class PlayerTagBase implements Listener {
     public void addMessage(final AsyncPlayerChatEvent event) {
         final int maxSize = Settings.chatHistoryMaxMessages();
         if (maxSize > 0) {
-            Bukkit.getScheduler().runTaskLater(Denizen.getInstance(), () -> {
+            // runGlobalDelayed(1): only mutates the in-memory playerChatHistory map (no world/entity state); fired from the
+            // async chat event, so a 1-tick global hop preserves the original ordering semantics
+            FoliaScheduler.runGlobalDelayed(() -> {
                 List<String> history = playerChatHistory.get(event.getPlayer().getUniqueId());
                 // If history hasn't been started for this player, initialize a new ArrayList
                 if (history == null) {

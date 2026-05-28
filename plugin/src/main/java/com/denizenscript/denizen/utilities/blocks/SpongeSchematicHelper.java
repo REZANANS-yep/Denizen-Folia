@@ -1,9 +1,9 @@
 package com.denizenscript.denizen.utilities.blocks;
 
-import com.denizenscript.denizen.Denizen;
 import com.denizenscript.denizen.nms.NMSHandler;
 import com.denizenscript.denizen.nms.interfaces.BlockHelper;
 import com.denizenscript.denizen.objects.MaterialTag;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizencore.objects.core.ListTag;
 import com.denizenscript.denizencore.objects.core.MapTag;
 import com.denizenscript.denizencore.utilities.CoreUtilities;
@@ -107,7 +107,9 @@ public class SpongeSchematicHelper {
             }
             if (!isPrimary && !latePairs.isEmpty()) {
                 BoolHolder bool = new BoolHolder();
-                Bukkit.getScheduler().runTask(Denizen.getInstance(), () -> {
+                // runGlobal: only parses block-data material strings into a shared cache via NMS (no specific world/region),
+                // which must happen on a tick thread; the off-thread parser below busy-waits on the BoolHolder for completion
+                FoliaScheduler.runGlobal(() -> {
                     for (Map.Entry<Integer, String> pair : latePairs) {
                         palette.put(pair.getKey(), blockDataCache.computeIfAbsent(pair.getValue(), SpongeSchematicHelper::unstableParseMaterial));
                     }

@@ -8,6 +8,7 @@ import com.denizenscript.denizen.nms.interfaces.packets.PacketOutChat;
 import com.denizenscript.denizen.objects.EntityTag;
 import com.denizenscript.denizen.objects.PlayerTag;
 import com.denizenscript.denizen.scripts.commands.server.ExecuteCommand;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizencore.DenizenCore;
 import com.denizenscript.denizencore.objects.core.ElementTag;
 import com.denizenscript.denizencore.utilities.debugging.Debug;
@@ -29,7 +30,8 @@ public class DenizenPacketHandler {
         if (!ResourcePackStatusScriptEvent.instance.eventData.isEnabled) {
             return;
         }
-        Bukkit.getScheduler().runTask(Denizen.getInstance(), () -> {
+        // runOnEntity: resource-pack status fires for this specific player; bounce onto the player's owning region thread
+        FoliaScheduler.runOnEntity(player, () -> {
             ResourcePackStatusScriptEvent event = ResourcePackStatusScriptEvent.instance;
             event.status = new ElementTag(resourcePackStatus.getStatus());
             event.player = PlayerTag.mirrorBukkitPlayer(player);
@@ -61,7 +63,8 @@ public class DenizenPacketHandler {
                 process.run();
             }
             else {
-                Bukkit.getScheduler().runTask(Denizen.getInstance(), process);
+                // runOnEntity: steer event touches the player and its vehicle; route to the player's owning region thread
+                FoliaScheduler.runOnEntity(player, process);
             }
         }
         return false;
@@ -77,7 +80,8 @@ public class DenizenPacketHandler {
             return;
         }
         if (isHoldingRaisable(player)) {
-            Bukkit.getScheduler().runTask(Denizen.getInstance(), () -> {
+            // runOnEntity: raise signal acts on this player; run on the player's owning region thread
+            FoliaScheduler.runOnEntity(player, () -> {
                 PlayerRaiseLowerItemScriptEvent.signalDidRaise(player);
             });
         }
@@ -88,7 +92,8 @@ public class DenizenPacketHandler {
             return;
         }
         if (isHoldingRaisable(player)) {
-            Bukkit.getScheduler().runTask(Denizen.getInstance(), () -> {
+            // runOnEntity: lower signal acts on this player; run on the player's owning region thread
+            FoliaScheduler.runOnEntity(player, () -> {
                 PlayerRaiseLowerItemScriptEvent.signalDidLower(player, "lower");
             });
         }
@@ -124,8 +129,10 @@ public class DenizenPacketHandler {
                     return eventCall.call();
                 }
                 else {
+                    // runGlobal + FutureTask.get(): the script engine triggerNow runs on the global region (the engine tick thread);
+                    // this sendPacket call is off-thread, so block on the future until the script completes (preserves the legacy .get())
                     FutureTask<PlayerReceivesMessageScriptEvent> futureTask = new FutureTask<>(eventCall);
-                    Bukkit.getScheduler().runTask(Denizen.getInstance(), futureTask);
+                    FoliaScheduler.runGlobal(futureTask);
                     return futureTask.get();
                 }
             }

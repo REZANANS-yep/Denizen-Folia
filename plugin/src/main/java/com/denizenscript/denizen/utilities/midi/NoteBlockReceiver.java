@@ -1,8 +1,8 @@
 package com.denizenscript.denizen.utilities.midi;
 
-import com.denizenscript.denizen.Denizen;
 import com.denizenscript.denizen.objects.EntityTag;
 import com.denizenscript.denizen.objects.LocationTag;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizencore.utilities.debugging.Debug;
 import com.google.common.collect.Maps;
 import org.bukkit.Bukkit;
@@ -126,8 +126,31 @@ public class NoteBlockReceiver implements Receiver, MetaEventListener {
         if (Bukkit.isPrimaryThread()) {
             actualPlay.run();
         }
+        else if (location != null) {
+            // runOnRegion: location-mode playback plays the note at a world location, so it must run on that region's thread
+            FoliaScheduler.runOnRegion(location, actualPlay);
+        }
+        else if (entities != null && !entities.isEmpty()) {
+            // runOnEntity: entity-mode playback plays sound to/at the target entities; route onto the first spawned entity's
+            // owning region. NOTE: if entities span multiple regions, the per-entity playSound calls inside actualPlay still
+            // execute on this single region thread - acceptable here since playSound only sends sound packets / reads location.
+            EntityTag anchor = null;
+            for (EntityTag entity : entities) {
+                if (entity.isSpawned()) {
+                    anchor = entity;
+                    break;
+                }
+            }
+            if (anchor != null) {
+                FoliaScheduler.runOnEntity(anchor.getBukkitEntity(), actualPlay);
+            }
+            else {
+                FoliaScheduler.runGlobal(actualPlay);
+            }
+        }
         else {
-            Bukkit.getScheduler().scheduleSyncDelayedTask(Denizen.getInstance(), actualPlay);
+            // runGlobal: no location and no entities left - actualPlay just calls close() (data cleanup)
+            FoliaScheduler.runGlobal(actualPlay);
         }
     }
 
@@ -139,7 +162,8 @@ public class NoteBlockReceiver implements Receiver, MetaEventListener {
             return;
         }
         closing = true;
-        Bukkit.getScheduler().scheduleSyncDelayedTask(Denizen.getInstance(), () -> {
+        // runGlobalDelayed(1): cleanup only touches receiver state / sequencer / onFinish callback (no world or entity state)
+        FoliaScheduler.runGlobalDelayed(() -> {
             try {
                 MidiUtil.receivers.remove(key);
                 if (sequencer != null) {

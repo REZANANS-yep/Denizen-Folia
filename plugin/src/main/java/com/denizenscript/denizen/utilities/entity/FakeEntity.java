@@ -1,14 +1,13 @@
 package com.denizenscript.denizen.utilities.entity;
 
-import com.denizenscript.denizen.Denizen;
 import com.denizenscript.denizen.nms.NMSHandler;
 import com.denizenscript.denizen.objects.EntityTag;
 import com.denizenscript.denizen.objects.LocationTag;
 import com.denizenscript.denizen.objects.PlayerTag;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.utilities.packets.NetworkInterceptHelper;
 import com.denizenscript.denizencore.objects.core.DurationTag;
-import org.bukkit.scheduler.BukkitRunnable;
-import org.bukkit.scheduler.BukkitTask;
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 
 import java.util.*;
 import java.util.function.Consumer;
@@ -39,7 +38,7 @@ public class FakeEntity {
     public int id;
     public EntityTag entity;
     public LocationTag location;
-    public BukkitTask currentTask = null;
+    public ScheduledTask currentTask = null;
     public Consumer<PlayerTag> triggerSpawnPacket;
     public Runnable triggerUpdatePacket;
     public Runnable triggerDestroyPacket;
@@ -100,13 +99,12 @@ public class FakeEntity {
         }
         this.entity = entity;
         if (duration != null && duration.getTicks() > 0) {
-            currentTask = new BukkitRunnable() {
-                @Override
-                public void run() {
-                    currentTask = null;
-                    cancelEntity();
-                }
-            }.runTaskLater(Denizen.getInstance(), duration.getTicks());
+            // runOnEntityDelayed: this fake entity is anchored to a real backing entity; the expiry cleanup (cancelEntity)
+            // touches that entity, so it must run on the entity's owning region thread after the duration.
+            currentTask = FoliaScheduler.runOnEntityDelayed(entity.getBukkitEntity(), () -> {
+                currentTask = null;
+                cancelEntity();
+            }, null, duration.getTicks());
         }
     }
 }

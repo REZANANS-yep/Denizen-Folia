@@ -13,7 +13,6 @@ import com.denizenscript.denizencore.scripts.ScriptHelper;
 import com.denizenscript.denizencore.utilities.CoreUtilities;
 import com.denizenscript.denizencore.utilities.YamlConfiguration;
 import com.denizenscript.denizencore.utilities.text.StringHolder;
-import org.bukkit.scheduler.BukkitRunnable;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -116,26 +115,25 @@ public class LegacySavesUpdater {
         }
         if (saveSection.contains("NPCs")) {
             final YamlConfiguration npcsSection = saveSection.getConfigurationSection("NPCs");
-            new BukkitRunnable() {
-                @Override
-                public void run() {
-                    Debug.log("==== Late update NPC data ====");
-                    for (StringHolder npcId : npcsSection.getKeys(false)) {
-                        YamlConfiguration actual = npcsSection.getConfigurationSection(npcId.str);
-                        NPCTag npc = NPCTag.valueOf(npcId.str, CoreUtilities.errorButNoDebugContext);
-                        if (npc == null) {
-                            Debug.echoError("Cannot update data for NPC with id: " + npcId.str);
-                            continue;
-                        }
-                        AbstractFlagTracker tracker = npc.getFlagTracker();
-                        if (actual.contains("Flags")) {
-                            applyFlags(npc.identify(), tracker, actual.getConfigurationSection("Flags"));
-                        }
-                        npc.reapplyTracker(tracker);
-                        Debug.log("==== Done late-updating NPC data ====");
+            // runGlobalDelayed(3): server-wide late-update of every NPC's flag tracker (NPCTag/flag-engine data, not a single
+            // region/entity); preserves the original 3-tick delay
+            FoliaScheduler.runGlobalDelayed(() -> {
+                Debug.log("==== Late update NPC data ====");
+                for (StringHolder npcId : npcsSection.getKeys(false)) {
+                    YamlConfiguration actual = npcsSection.getConfigurationSection(npcId.str);
+                    NPCTag npc = NPCTag.valueOf(npcId.str, CoreUtilities.errorButNoDebugContext);
+                    if (npc == null) {
+                        Debug.echoError("Cannot update data for NPC with id: " + npcId.str);
+                        continue;
                     }
+                    AbstractFlagTracker tracker = npc.getFlagTracker();
+                    if (actual.contains("Flags")) {
+                        applyFlags(npc.identify(), tracker, actual.getConfigurationSection("Flags"));
+                    }
+                    npc.reapplyTracker(tracker);
+                    Debug.log("==== Done late-updating NPC data ====");
                 }
-            }.runTaskLater(Denizen.getInstance(), 3);
+            }, 3);
         }
         Denizen.getInstance().saveSaves(false);
         Debug.log("==== Done updating legacy saves (except NPCs) ====");

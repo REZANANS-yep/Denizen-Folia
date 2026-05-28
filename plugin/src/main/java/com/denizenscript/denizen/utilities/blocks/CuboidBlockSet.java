@@ -1,10 +1,10 @@
 package com.denizenscript.denizen.utilities.blocks;
 
-import com.denizenscript.denizen.Denizen;
 import com.denizenscript.denizen.nms.NMSHandler;
 import com.denizenscript.denizen.nms.NMSVersion;
 import com.denizenscript.denizen.objects.*;
 import com.denizenscript.denizen.scripts.commands.world.SchematicCommand;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.utilities.Utilities;
 import com.denizenscript.denizencore.utilities.debugging.Debug;
 import com.denizenscript.denizencore.objects.Mechanism;
@@ -12,13 +12,13 @@ import com.denizenscript.denizencore.objects.core.ElementTag;
 import com.denizenscript.denizencore.objects.core.ListTag;
 import com.denizenscript.denizencore.objects.core.MapTag;
 import com.denizenscript.denizencore.utilities.CoreUtilities;
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
-import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.util.Vector;
 
 import java.util.ArrayList;
@@ -92,35 +92,34 @@ public class CuboidBlockSet implements BlockSet {
         blocks = new FullBlockData[x_width * y_length * z_height];
         double lowX = low.getBlockX() + 0.5, lowY = low.getBlockY() + 0.5, lowZ = low.getBlockZ() + 0.5;
         Location refLoc = low.clone();
-        new BukkitRunnable() {
-            int index = 0;
-            @Override
-            public void run() {
-                long start = CoreUtilities.monotonicMillis();
-                while (index < goal) {
-                    long z = index % ((long) z_height);
-                    long y = ((index - z) % ((long)y_length * z_height)) / ((long) z_height);
-                    long x = (index - y - z) / ((long)y_length * z_height);
-                    refLoc.setX(lowX + x);
-                    refLoc.setY(lowY + y);
-                    refLoc.setZ(lowZ + z);
-                    FullBlockData block = (constraint == null || constraint.doesContainLocation(refLoc)) ? new FullBlockData(refLoc.getBlock(), copyFlags) : STRUCTURE_VOID;
-                    if (block != STRUCTURE_VOID && mask != null && !mask.contains(block.data.getMaterial())) {
-                        block = STRUCTURE_VOID;
-                    }
-                    blocks[index] = block;
-                    index++;
-                    if (CoreUtilities.monotonicMillis() - start > maxDelayMs) {
-                        return;
-                    }
+        // runOnRegionRepeating: incrementally reads block data across the cuboid region (anchored at 'low'), so it must
+        // run on the owning region thread. Self-cancels via the saved ScheduledTask once all blocks are read.
+        int[] index = {0};
+        ScheduledTask[] taskHolder = new ScheduledTask[1];
+        taskHolder[0] = FoliaScheduler.runOnRegionRepeating(low, () -> {
+            long start = CoreUtilities.monotonicMillis();
+            while (index[0] < goal) {
+                long z = index[0] % ((long) z_height);
+                long y = ((index[0] - z) % ((long)y_length * z_height)) / ((long) z_height);
+                long x = (index[0] - y - z) / ((long)y_length * z_height);
+                refLoc.setX(lowX + x);
+                refLoc.setY(lowY + y);
+                refLoc.setZ(lowZ + z);
+                FullBlockData block = (constraint == null || constraint.doesContainLocation(refLoc)) ? new FullBlockData(refLoc.getBlock(), copyFlags) : STRUCTURE_VOID;
+                if (block != STRUCTURE_VOID && mask != null && !mask.contains(block.data.getMaterial())) {
+                    block = STRUCTURE_VOID;
                 }
-                if (runme != null) {
-                    runme.run();
+                blocks[index[0]] = block;
+                index[0]++;
+                if (CoreUtilities.monotonicMillis() - start > maxDelayMs) {
+                    return;
                 }
-                cancel();
-
             }
-        }.runTaskTimer(Denizen.getInstance(), 1, 1);
+            if (runme != null) {
+                runme.run();
+            }
+            taskHolder[0].cancel();
+        }, 1, 1);
     }
 
     public AreaContainmentObject constraint = null;
@@ -301,30 +300,30 @@ public class CuboidBlockSet implements BlockSet {
     @Override
     public void setBlocksDelayed(final Runnable runme, final InputParams input, long maxDelayMs) {
         final long goal = (long)x_width * y_length * z_height;
-        new BukkitRunnable() {
-            int index = 0;
-            @Override
-            public void run() {
-                SchematicCommand.noPhys = true;
-                long start = CoreUtilities.monotonicMillis();
-                while (index < goal) {
-                    int z = index % (z_height);
-                    int y = ((index - z) % (y_length * z_height)) / z_height;
-                    int x = (index - y - z) / (y_length * z_height);
-                    setBlockSingle(blocks[index], x, y, z, input);
-                    index++;
-                    if (CoreUtilities.monotonicMillis() - start > maxDelayMs) {
-                        SchematicCommand.noPhys = false;
-                        return;
-                    }
-                }
-                SchematicCommand.noPhys = false;
-                cancel();
-                if (runme != null) {
-                    runme.run();
+        // runOnRegionRepeating: incrementally writes blocks around input.centerLocation, so it must run on that
+        // location's owning region thread. Self-cancels via the saved ScheduledTask once all blocks are placed.
+        int[] index = {0};
+        ScheduledTask[] taskHolder = new ScheduledTask[1];
+        taskHolder[0] = FoliaScheduler.runOnRegionRepeating(input.centerLocation, () -> {
+            SchematicCommand.noPhys = true;
+            long start = CoreUtilities.monotonicMillis();
+            while (index[0] < goal) {
+                int z = index[0] % (z_height);
+                int y = ((index[0] - z) % (y_length * z_height)) / z_height;
+                int x = (index[0] - y - z) / (y_length * z_height);
+                setBlockSingle(blocks[index[0]], x, y, z, input);
+                index[0]++;
+                if (CoreUtilities.monotonicMillis() - start > maxDelayMs) {
+                    SchematicCommand.noPhys = false;
+                    return;
                 }
             }
-        }.runTaskTimer(Denizen.getInstance(), 1, 1);
+            SchematicCommand.noPhys = false;
+            taskHolder[0].cancel();
+            if (runme != null) {
+                runme.run();
+            }
+        }, 1, 1);
     }
 
     @Override

@@ -1,11 +1,10 @@
 package com.denizenscript.denizen.utilities.entity;
 
-import com.denizenscript.denizen.Denizen;
 import com.denizenscript.denizen.objects.EntityTag;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.utilities.packets.NetworkInterceptHelper;
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import org.bukkit.Location;
-import org.bukkit.scheduler.BukkitRunnable;
-import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.Vector;
 
 import java.util.HashMap;
@@ -34,7 +33,7 @@ public class EntityAttachmentHelper {
 
         public boolean noRotate, noPitch;
 
-        public BukkitTask checkTask;
+        public ScheduledTask checkTask;
 
         public UUID forPlayer;
 
@@ -67,32 +66,26 @@ public class EntityAttachmentHelper {
             if (checkTask != null) {
                 checkTask.cancel();
             }
-            BukkitRunnable runnable = new BukkitRunnable() {
-                int ticks = 0;
-                @Override
-                public void run() {
-                    if (!attached.isValid() || !to.isValid()) {
-                        cancelAndRemove();
-                        return;
-                    }
-                    if (ticks++ >= 20 * 10) { // Run a forcetele every 10 seconds to guarantee sync
-                        visiblePositions.clear();
-                        ticks = 0;
-                    }
-                    if (syncServer) {
-                        doServerSync();
-                    }
+            int[] ticks = {0};
+            Runnable runnable = () -> {
+                if (!attached.isValid() || !to.isValid()) {
+                    cancelAndRemove();
+                    return;
+                }
+                if (ticks[0]++ >= 20 * 10) { // Run a forcetele every 10 seconds to guarantee sync
+                    visiblePositions.clear();
+                    ticks[0] = 0;
+                }
+                if (syncServer) {
+                    doServerSync();
                 }
             };
-            runnable.run();
-            checkTask = runnable.runTaskTimer(Denizen.getInstance(), 1, 1);
-            new BukkitRunnable() {
-                @Override
-                public void run() {
-                    // Run a forcetele one second later just to guarantee sync for lagging clients
-                    visiblePositions.clear();
-                }
-            }.runTaskLater(Denizen.getInstance(), 20);
+            // runOnEntity: this watcher teleports the single 'attached' entity, so it must run on that entity's region thread.
+            FoliaScheduler.runOnEntity(attached.getBukkitEntity(), runnable);
+            // runOnEntityRepeating: same per-entity watcher every tick; retired callback cleans up when the entity is gone.
+            checkTask = FoliaScheduler.runOnEntityRepeating(attached.getBukkitEntity(), runnable, this::cancelAndRemove, 1, 1);
+            // runOnEntityDelayed: one-shot forcetele for this attachment's entity, 20 ticks later (lagging-client sync).
+            FoliaScheduler.runOnEntityDelayed(attached.getBukkitEntity(), () -> visiblePositions.clear(), null, 20);
         }
 
         public void removeFrom(PlayerAttachMap map) {

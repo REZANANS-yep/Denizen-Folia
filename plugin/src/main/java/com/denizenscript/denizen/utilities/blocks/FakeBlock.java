@@ -1,17 +1,15 @@
 package com.denizenscript.denizen.utilities.blocks;
 
-import com.denizenscript.denizen.Denizen;
 import com.denizenscript.denizen.nms.NMSHandler;
 import com.denizenscript.denizen.nms.NMSVersion;
 import com.denizenscript.denizen.objects.LocationTag;
 import com.denizenscript.denizen.objects.MaterialTag;
 import com.denizenscript.denizen.objects.PlayerTag;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.utilities.packets.NetworkInterceptHelper;
 import com.denizenscript.denizencore.objects.core.DurationTag;
-import org.bukkit.Bukkit;
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import org.bukkit.World;
-import org.bukkit.scheduler.BukkitRunnable;
-import org.bukkit.scheduler.BukkitTask;
 
 import java.util.*;
 
@@ -74,7 +72,7 @@ public class FakeBlock {
     public final LocationTag location;
     public final ChunkCoordinate chunkCoord;
     public MaterialTag material;
-    public BukkitTask currentTask = null;
+    public ScheduledTask currentTask = null;
 
     private FakeBlock(PlayerTag player, LocationTag location) {
         this.player = player;
@@ -111,14 +109,16 @@ public class FakeBlock {
         }
     }
 
-    public static HashMap<ChunkCoordinate, BukkitTask> scheduled = new HashMap<>();
+    public static HashMap<ChunkCoordinate, ScheduledTask> scheduled = new HashMap<>();
 
     public static void scheduleChunkRefresh(World world, ChunkCoordinate coord) {
-        BukkitTask task = scheduled.get(coord);
-        if (task != null && !task.isCancelled()) {
+        ScheduledTask task = scheduled.get(coord);
+        if (task != null && task.getExecutionState() != ScheduledTask.ExecutionState.CANCELLED) {
             return;
         }
-        scheduled.put(coord, Bukkit.getScheduler().runTaskLater(Denizen.getInstance(), () -> {
+        // runOnRegion (chunk overload) delayed: refreshing a chunk is region-owned world work, so it must run on the
+        // thread owning that chunk, 1 tick later.
+        scheduled.put(coord, FoliaScheduler.runOnRegionDelayed(new org.bukkit.Location(world, coord.x << 4, 0, coord.z << 4), () -> {
             world.refreshChunk(coord.x, coord.z);
             scheduled.remove(coord);
         }, 1));
@@ -155,13 +155,12 @@ public class FakeBlock {
             scheduleChunkRefresh(location.getWorld(), chunkCoord);
         }
         if (duration != null && duration.getTicks() > 0) {
-            currentTask = new BukkitRunnable() {
-                @Override
-                public void run() {
-                    currentTask = null;
-                    cancelBlock();
-                }
-            }.runTaskLater(Denizen.getInstance(), duration.getTicks());
+            // runOnRegionDelayed: the expiry cleanup (cancelBlock) refreshes/resends this fake block's location, which is
+            // region-owned world work, so it runs on that location's owning region thread after the duration.
+            currentTask = FoliaScheduler.runOnRegionDelayed(location, () -> {
+                currentTask = null;
+                cancelBlock();
+            }, duration.getTicks());
         }
     }
 }

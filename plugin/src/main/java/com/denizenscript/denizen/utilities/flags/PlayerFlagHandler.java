@@ -1,6 +1,7 @@
 package com.denizenscript.denizen.utilities.flags;
 
 import com.denizenscript.denizen.Denizen;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizencore.DenizenCore;
 import com.denizenscript.denizencore.utilities.CoreConfiguration;
 import com.denizenscript.denizencore.utilities.debugging.Debug;
@@ -99,47 +100,39 @@ public class PlayerFlagHandler implements Listener {
         if (saveOnlyWhenWorldSaveOn && !Bukkit.getWorlds().get(0).isAutoSave()) {
             return;
         }
-        BukkitRunnable expireTask = new BukkitRunnable() {
-            @Override
-            public void run() {
-                if (cache.shouldExpire()) {
-                    playerFlagTrackerCache.remove(id);
-                    secondaryPlayerFlagTrackerCache.put(id, new SoftReference<>(cache));
-                }
+        // Cache cleanup only (no world/entity access) - runs on the global region. File save is async I/O.
+        Runnable expireTask = () -> {
+            if (cache.shouldExpire()) {
+                playerFlagTrackerCache.remove(id);
+                secondaryPlayerFlagTrackerCache.put(id, new SoftReference<>(cache));
             }
         };
         if (cache.savingNow.get() || cache.loadingNow.get()) {
-            new BukkitRunnable() {
-                @Override
-                public void run() {
-                    CachedPlayerFlag newCache = playerFlagTrackerCache.get(id);
-                    if (newCache != null) {
-                        saveThenExpire(id, newCache);
-                    }
+            FoliaScheduler.runGlobalDelayed(() -> {
+                CachedPlayerFlag newCache = playerFlagTrackerCache.get(id);
+                if (newCache != null) {
+                    saveThenExpire(id, newCache);
                 }
-            }.runTaskLater(Denizen.getInstance(), 10);
+            }, 10);
             return;
         }
         if (!cache.tracker.modified) {
-            expireTask.runTaskLater(Denizen.getInstance(), 1);
+            FoliaScheduler.runGlobalDelayed(expireTask, 1);
             return;
         }
         cache.tracker.modified = false;
         String text = cache.tracker.toString();
         cache.savingNow.set(true);
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                try {
-                    saveFlags(id, text);
-                }
-                catch (Throwable ex) {
-                    Debug.echoError(ex);
-                }
-                cache.savingNow.set(false);
-                expireTask.runTaskLater(Denizen.getInstance(), 1);
+        FoliaScheduler.runAsync(() -> {
+            try {
+                saveFlags(id, text);
             }
-        }.runTaskAsynchronously(Denizen.getInstance());
+            catch (Throwable ex) {
+                Debug.echoError(ex);
+            }
+            cache.savingNow.set(false);
+            FoliaScheduler.runGlobalDelayed(expireTask, 1);
+        });
     }
 
     public static void loadFlags(UUID id, CachedPlayerFlag cache) {
@@ -237,21 +230,19 @@ public class PlayerFlagHandler implements Listener {
             }
             playerFlagTrackerCache.put(id, newCache);
             CompletableFuture future = new CompletableFuture();
-            new BukkitRunnable() {
-                @Override
-                public void run() {
-                    loadFlags(id, newCache);
-                    Bukkit.getScheduler().scheduleSyncDelayedTask(Denizen.instance, () -> {
-                        if (CoreConfiguration.debugVerbose) {
-                            Debug.echoError("Verbose - flag tracker async loaded " + id);
-                        }
-                        if (newCache.tracker != null && !CoreConfiguration.skipAllFlagCleanings) {
-                            newCache.tracker.doTotalClean();
-                        }
-                    });
-                    future.complete(null);
-                }
-            }.runTaskAsynchronously(Denizen.getInstance());
+            FoliaScheduler.runAsync(() -> {
+                loadFlags(id, newCache);
+                // Flag-data cleanup only (no world access) -> global region.
+                FoliaScheduler.runGlobal(() -> {
+                    if (CoreConfiguration.debugVerbose) {
+                        Debug.echoError("Verbose - flag tracker async loaded " + id);
+                    }
+                    if (newCache.tracker != null && !CoreConfiguration.skipAllFlagCleanings) {
+                        newCache.tracker.doTotalClean();
+                    }
+                });
+                future.complete(null);
+            });
             return future;
         }
         catch (Throwable ex) {
@@ -307,8 +298,15 @@ public class PlayerFlagHandler implements Listener {
         }
         UUID id = event.getUniqueId();
         if (!Bukkit.isPrimaryThread()) {
-            Future<Future> future = Bukkit.getScheduler().callSyncMethod(Denizen.getInstance(), () -> {
-                return loadAsync(id);
+            // Run loadAsync on the global region (it mutates the flag cache); block this async pre-login thread on it.
+            CompletableFuture<Future> future = new CompletableFuture<>();
+            FoliaScheduler.runGlobal(() -> {
+                try {
+                    future.complete(loadAsync(id));
+                }
+                catch (Throwable ex) {
+                    future.completeExceptionally(ex);
+                }
             });
             try {
                 Future newFuture = future.get(15, TimeUnit.SECONDS);
