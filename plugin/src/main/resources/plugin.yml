@@ -5,6 +5,7 @@ main: com.denizenscript.denizen.Denizen
 softdepend: [Citizens, Vault]
 
 api-version: '1.17'
+folia-supported: true
 
 libraries:
   - org.mongodb:mongodb-driver-sync:4.8.1

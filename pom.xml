@@ -15,14 +15,12 @@
         <DENIZEN_VERSION>1.3.1</DENIZEN_VERSION>
     </properties>
 
+    <!-- Folia fork (target: Folia 1.21.11). Legacy version modules (v1_17..v1_20) and the separate `paper` module
+         are pruned to shrink fork-maintenance surface; only the 1.21.x NMS module is kept. Paper-specific features
+         fall back gracefully (PaperModule is loaded reflectively with a ClassNotFound fallback). -->
     <modules>
         <module>plugin</module>
-        <module>paper</module>
         <module>v1_21</module>
-        <module>v1_20</module>
-        <module>v1_19</module>
-        <module>v1_18</module>
-        <module>v1_17</module>
         <module>dist</module>
     </modules>
 
@@ -32,10 +30,12 @@
             <id>everything</id>
             <url>https://maven.citizensnpcs.co/repo</url>
         </repository>
-        <!--<repository>
-            <id>spigot-repo</id>
-            <url>https://hub.spigotmc.org/nexus/content/repositories/snapshots/</url>
-        </repository>-->
+        <!-- PaperMC: paper-api carries the Folia regionized scheduler API (GlobalRegionScheduler, RegionScheduler,
+             AsyncScheduler, Entity#getScheduler, Bukkit.isGlobalTickThread). Folia ships these same APIs. -->
+        <repository>
+            <id>papermc</id>
+            <url>https://repo.papermc.io/repository/maven-public/</url>
+        </repository>
     </repositories>
 
     <ciManagement>
@@ -73,8 +73,8 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.8.0</version>
                 <configuration>
-                    <source>16</source>
-                    <target>16</target>
+                    <source>21</source>
+                    <target>21</target>
                 </configuration>
             </plugin>
         </plugins>
