@@ -304,6 +304,7 @@ public class LocationTag extends org.bukkit.Location implements VectorObject, Ob
             Debug.echoError("LocationTag trying to read block, but cannot because no world is specified.");
             return null;
         }
+        FoliaScheduler.warnIfCrossRegion(this, "LocationTag.getBlock"); // Folia read-hardening diagnostic (off by default)
         return super.getBlock();
     }
 
@@ -4650,6 +4651,12 @@ public class LocationTag extends org.bukkit.Location implements VectorObject, Ob
 
     @Override
     public void adjust(Mechanism mechanism) {
+        // Folia: location mechanisms mutate the block/state at this location, which must run on the owning region.
+        // Runs inline when already on that region (e.g. event context), dispatches when on the global engine tick.
+        FoliaScheduler.ensureRegion(this, () -> adjustInternal(mechanism));
+    }
+
+    private void adjustInternal(Mechanism mechanism) {
 
         // <--[mechanism]
         // @object LocationTag

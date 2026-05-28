@@ -758,6 +758,7 @@ public class EntityTag implements ObjectTag, Adjustable, EntityFormObject, Flagg
     public LocationTag getLocation() {
         Entity entity = getBukkitEntity();
         if (entity != null) {
+            FoliaScheduler.warnIfCrossRegion(entity, "EntityTag.getLocation"); // Folia read-hardening diagnostic (off by default)
             return new LocationTag(entity.getLocation());
         }
 
@@ -805,7 +806,8 @@ public class EntityTag implements ObjectTag, Adjustable, EntityFormObject, Flagg
         if (entity == null) {
             return;
         }
-        entity.setVelocity(vector);
+        // Folia: dispatch to the entity's owning region (runs inline if already there).
+        FoliaScheduler.ensureEntity(entity, () -> entity.setVelocity(vector));
     }
 
     public World getWorld() {
@@ -960,7 +962,8 @@ public class EntityTag implements ObjectTag, Adjustable, EntityFormObject, Flagg
     }
 
     public void remove() {
-        entity.remove();
+        // Folia: removal must run on the entity's owning region (runs inline if already there).
+        FoliaScheduler.ensureEntity(entity, entity::remove);
     }
 
     public void teleport(Location location) {
@@ -972,34 +975,46 @@ public class EntityTag implements ObjectTag, Adjustable, EntityFormObject, Flagg
             Debug.echoError("Cannot teleport or spawn entity at location '" + new LocationTag(location) + "' because it is missing a world.");
             return;
         }
-        if (isCitizensNPC()) {
-            if (getDenizenNPC().getCitizen().isSpawned()) {
-                getDenizenNPC().getCitizen().teleport(location, cause);
-            }
-            else {
-                if (getDenizenNPC().getCitizen().spawn(location)) {
-                    entity = getDenizenNPC().getCitizen().getEntity();
-                    uuid = getDenizenNPC().getCitizen().getEntity().getUniqueId();
+        Runnable action = () -> {
+            if (isCitizensNPC()) {
+                if (getDenizenNPC().getCitizen().isSpawned()) {
+                    getDenizenNPC().getCitizen().teleport(location, cause);
                 }
                 else {
-                    if (new LocationTag(location).isChunkLoaded()) {
-                        Debug.echoError("Error spawning NPC - tried to spawn in an unloaded chunk.");
+                    if (getDenizenNPC().getCitizen().spawn(location)) {
+                        entity = getDenizenNPC().getCitizen().getEntity();
+                        uuid = getDenizenNPC().getCitizen().getEntity().getUniqueId();
                     }
                     else {
-                        Debug.echoError("Error spawning NPC - blocked by plugin");
+                        if (new LocationTag(location).isChunkLoaded()) {
+                            Debug.echoError("Error spawning NPC - tried to spawn in an unloaded chunk.");
+                        }
+                        else {
+                            Debug.echoError("Error spawning NPC - blocked by plugin");
+                        }
                     }
                 }
             }
-        }
-        else if (isFake) {
-            NMSHandler.entityHelper.snapPositionTo(entity, location.toVector());
-            NMSHandler.entityHelper.look(entity, location.getYaw(), location.getPitch());
+            else if (isFake) {
+                NMSHandler.entityHelper.snapPositionTo(entity, location.toVector());
+                NMSHandler.entityHelper.look(entity, location.getYaw(), location.getPitch());
+            }
+            else {
+                getBukkitEntity().teleport(location, cause);
+                if (entity.getWorld().equals(location.getWorld())) { // Force the teleport through (for things like mounts)
+                    NMSHandler.entityHelper.teleport(entity, location);
+                }
+            }
+        };
+        // Folia: run on the owning region of the entity (runs inline if already there). When the entity does not yet
+        // exist (unspawned NPC), the spawn happens at the target location, so dispatch to that location's region.
+        // Note: cross-region synchronous teleport is a known Folia limitation; same-region teleports work directly.
+        Entity bukkitEntity = getBukkitEntity();
+        if (bukkitEntity != null) {
+            FoliaScheduler.ensureEntity(bukkitEntity, action);
         }
         else {
-            getBukkitEntity().teleport(location, cause);
-            if (entity.getWorld().equals(location.getWorld())) { // Force the teleport through (for things like mounts)
-                NMSHandler.entityHelper.teleport(entity, location);
-            }
+            FoliaScheduler.ensureRegion(location, action);
         }
     }
 
