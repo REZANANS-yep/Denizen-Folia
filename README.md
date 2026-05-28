@@ -1,3 +1,18 @@
+> ## ⚠️ Folia fork - EXPERIMENTAL, NOT FOR PRODUCTION
+>
+> This is an **unofficial fork** of [DenizenScript/Denizen](https://github.com/DenizenScript/Denizen) that ports the
+> engine to **[Folia](https://github.com/PaperMC/Folia)** (regionized multithreading), targeting **Minecraft 1.21.11 only**.
+> Branch: `folia`. Based on the last pure-1.21.11 upstream commit (before the 26.1 retarget).
+>
+> **Do NOT run this on a production server.** It is a work-in-progress experiment:
+> - The script engine is serialized on Folia's global region tick; world mutations are dispatched to the owning
+>   region/entity scheduler. Most things work, but cross-region synchronous reads, some cancellable-event logic, and
+>   multi-region atomic operations are inherently limited on Folia and **some scripts may behave differently or break**.
+> - Hardening of cross-region reads is runtime-data-driven (enable `FoliaScheduler.diagnoseCrossRegion` to find offenders).
+> - Not maintained or endorsed by the DenizenScript team. The official Denizen does **not** support Folia.
+>
+> Requires the matching DenizenCore Folia fork. Build with Java 21 + a Spigot 1.21.11 server jar (BuildTools).
+
 The Denizen Scripting Language - Spigot Impl
 --------------------------------------------
 
