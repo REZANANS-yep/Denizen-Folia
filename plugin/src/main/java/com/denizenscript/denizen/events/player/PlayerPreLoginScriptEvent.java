@@ -1,6 +1,7 @@
 package com.denizenscript.denizen.events.player;
 
 import com.denizenscript.denizen.Denizen;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.events.BukkitScriptEvent;
 import com.denizenscript.denizen.objects.PlayerTag;
 import com.denizenscript.denizen.utilities.implementation.BukkitScriptEntryData;
@@ -129,9 +130,16 @@ public class PlayerPreLoginScriptEvent extends BukkitScriptEvent implements List
     public void onPlayerLogin(AsyncPlayerPreLoginEvent event) {
         if (!Bukkit.isPrimaryThread()) {
             PlayerPreLoginScriptEvent altEvent = (PlayerPreLoginScriptEvent) clone();
-            Future future = Bukkit.getScheduler().callSyncMethod(Denizen.getInstance(), () -> {
-                altEvent.onPlayerLogin(event);
-                return null;
+            // Folia has no legacy callSyncMethod. Run the event handling on the global region and block this async
+            // pre-login thread (safe to block - it is not a tick thread) until the script completes.
+            java.util.concurrent.CompletableFuture<Void> future = new java.util.concurrent.CompletableFuture<>();
+            FoliaScheduler.runGlobal(() -> {
+                try {
+                    altEvent.onPlayerLogin(event);
+                }
+                finally {
+                    future.complete(null);
+                }
             });
             try {
                 future.get(30, TimeUnit.SECONDS);

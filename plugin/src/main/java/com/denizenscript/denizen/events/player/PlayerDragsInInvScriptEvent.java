@@ -1,11 +1,11 @@
 package com.denizenscript.denizen.events.player;
 
-import com.denizenscript.denizen.Denizen;
 import com.denizenscript.denizen.events.BukkitScriptEvent;
 import com.denizenscript.denizen.objects.EntityTag;
 import com.denizenscript.denizen.objects.InventoryTag;
 import com.denizenscript.denizen.objects.ItemTag;
 import com.denizenscript.denizen.objects.PlayerTag;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.utilities.implementation.BukkitScriptEntryData;
 import com.denizenscript.denizen.utilities.inventory.InventoryViewUtil;
 import com.denizenscript.denizencore.objects.ObjectTag;
@@ -18,7 +18,6 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
-import org.bukkit.scheduler.BukkitRunnable;
 
 public class PlayerDragsInInvScriptEvent extends BukkitScriptEvent implements Listener {
 
@@ -124,15 +123,14 @@ public class PlayerDragsInInvScriptEvent extends BukkitScriptEvent implements Li
     public void cancellationChanged() {
         if (cancelled) {
             final InventoryHolder holder = inventory.getHolder();
-            new BukkitRunnable() {
-                @Override
-                public void run() {
-                    entity.getPlayerEntity().updateInventory();
-                    if (holder instanceof Player) {
-                        ((Player) holder).updateInventory();
-                    }
-                }
-            }.runTaskLater(Denizen.getInstance(), 1);
+            // runOnEntityDelayed(1): updateInventory mutates the dragging player's entity state, so it must run on that
+            // player's owning region thread after 1 tick
+            final Player dragger = entity.getPlayerEntity();
+            FoliaScheduler.runOnEntityDelayed(dragger, () -> dragger.updateInventory(), null, 1);
+            if (holder instanceof Player holderPlayer) {
+                // runOnEntityDelayed(1): the inventory holder may be a different player; refresh on its own region thread
+                FoliaScheduler.runOnEntityDelayed(holderPlayer, holderPlayer::updateInventory, null, 1);
+            }
         }
         super.cancellationChanged();
     }

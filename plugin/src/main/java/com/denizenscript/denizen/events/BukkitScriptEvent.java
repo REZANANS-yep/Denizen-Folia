@@ -7,6 +7,7 @@ import com.denizenscript.denizen.scripts.containers.core.EntityScriptHelper;
 import com.denizenscript.denizen.scripts.containers.core.InventoryScriptHelper;
 import com.denizenscript.denizen.scripts.containers.core.ItemScriptHelper;
 import com.denizenscript.denizen.tags.BukkitTagContext;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.utilities.NotedAreaTracker;
 import com.denizenscript.denizen.utilities.Utilities;
 import com.denizenscript.denizen.utilities.implementation.BukkitScriptEntryData;
@@ -599,17 +600,19 @@ public abstract class BukkitScriptEvent extends ScriptEvent {
 
     @Override
     public ScriptEvent fire() {
+        // On Folia, isPrimaryThread() is true on ANY tick thread (region or global). Events that fire on a region
+        // tick thread therefore run synchronously here - the event's own entity/block data is owned by that region
+        // and is legally accessible, and cancellation works. Only truly off-thread events (async chat, pre-login,
+        // etc.) take the bounce path below.
         if (!Bukkit.isPrimaryThread()) {
             if (CoreConfiguration.debugVerbose) {
-                Debug.log("Event is firing async: " + getName());
+                Debug.log("Event is firing off-thread, bouncing to global region: " + getName());
             }
             BukkitScriptEvent altEvent = (BukkitScriptEvent) clone();
-            new BukkitRunnable() {
-                @Override
-                public void run() {
-                    altEvent.fire();
-                }
-            }.runTask(Denizen.getInstance());
+            // Folia has no legacy BukkitScheduler; bounce the clone onto the global region (the serial engine thread).
+            // Note: a bounced event's world reads happen on the global region and so should rely on already-captured
+            // scalar data rather than live cross-region entity/block access.
+            FoliaScheduler.runGlobal(altEvent::fire);
             return altEvent;
         }
         return super.fire();

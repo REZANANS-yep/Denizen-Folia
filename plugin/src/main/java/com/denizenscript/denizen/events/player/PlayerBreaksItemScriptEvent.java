@@ -1,8 +1,8 @@
 package com.denizenscript.denizen.events.player;
 
-import com.denizenscript.denizen.Denizen;
 import com.denizenscript.denizen.objects.EntityTag;
 import com.denizenscript.denizen.objects.ItemTag;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.utilities.implementation.BukkitScriptEntryData;
 import com.denizenscript.denizen.events.BukkitScriptEvent;
 import com.denizenscript.denizen.utilities.inventory.SlotHelper;
@@ -14,7 +14,6 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerItemBreakEvent;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.scheduler.BukkitRunnable;
 
 public class PlayerBreaksItemScriptEvent extends BukkitScriptEvent implements Listener {
 
@@ -91,12 +90,12 @@ public class PlayerBreaksItemScriptEvent extends BukkitScriptEvent implements Li
             final Player player = event.getPlayer();
             final ItemStack itemstack = event.getBrokenItem();
             itemstack.setAmount(itemstack.getAmount() + 1);
-            new BukkitRunnable() {
-                public void run() {
-                    itemstack.setDurability(itemstack.getType().getMaxDurability());
-                    player.updateInventory();
-                }
-            }.runTaskLater(Denizen.getInstance(), 1);
+            // runOnEntityDelayed(1): restores the broken item and refreshes this player's inventory (player entity state),
+            // so it runs on the player's owning region thread after 1 tick
+            FoliaScheduler.runOnEntityDelayed(player, () -> {
+                itemstack.setDurability(itemstack.getType().getMaxDurability());
+                player.updateInventory();
+            }, null, 1);
         }
         super.cancellationChanged();
     }

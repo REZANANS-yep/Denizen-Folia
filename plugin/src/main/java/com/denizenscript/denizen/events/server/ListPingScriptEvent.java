@@ -1,6 +1,7 @@
 package com.denizenscript.denizen.events.server;
 
 import com.denizenscript.denizen.Denizen;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.events.BukkitScriptEvent;
 import com.denizenscript.denizen.nms.NMSHandler;
 import com.denizenscript.denizen.nms.NMSVersion;
@@ -128,9 +129,16 @@ public class ListPingScriptEvent extends BukkitScriptEvent implements Listener {
         this.event = event;
         if (!Bukkit.isPrimaryThread()) {
             BukkitScriptEvent altEvent = (BukkitScriptEvent) clone();
-            Future future = Bukkit.getScheduler().callSyncMethod(Denizen.getInstance(), () -> {
-                altEvent.fire(event);
-                return null;
+            // Folia has no legacy callSyncMethod. Run on the global region and block this off-thread ping handler
+            // (not a tick thread) until the script completes, so determinations apply to the ping response.
+            java.util.concurrent.CompletableFuture<Void> future = new java.util.concurrent.CompletableFuture<>();
+            FoliaScheduler.runGlobal(() -> {
+                try {
+                    altEvent.fire(event);
+                }
+                finally {
+                    future.complete(null);
+                }
             });
             try {
                 future.get(5, TimeUnit.SECONDS);
