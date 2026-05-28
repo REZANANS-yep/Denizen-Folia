@@ -75,14 +75,7 @@ public class BlockLightImpl extends BlockLight {
         BlockLight blockLight;
         if (lightsByLocation.containsKey(location)) {
             blockLight = lightsByLocation.get(location);
-            if (blockLight.removeTask != null) {
-                blockLight.removeTask.cancel();
-                blockLight.removeTask = null;
-            }
-            if (blockLight.updateTask != null) {
-                blockLight.updateTask.cancel();
-                blockLight.updateTask = null;
-            }
+            blockLight.cancelTasks();
             blockLight.removeLater(ticks);
         }
         else {
@@ -103,7 +96,7 @@ public class BlockLightImpl extends BlockLight {
             BlockPos pos = packet.getPos();
             int chunkX = pos.getX() >> 4;
             int chunkZ = pos.getZ() >> 4;
-            Bukkit.getScheduler().scheduleSyncDelayedTask(NMSHandler.getJavaPlugin(), () -> {
+            scheduleLater(() -> {
                 LevelChunk chunk = world.getChunk(chunkX, chunkZ);
                 boolean any = false;
                 for (Vector vec : RELATIVE_CHUNKS) {
@@ -113,13 +106,13 @@ public class BlockLightImpl extends BlockLight {
                         if (lights != null) {
                             any = true;
                             for (BlockLight light : lights) {
-                                Bukkit.getScheduler().scheduleSyncDelayedTask(NMSHandler.getJavaPlugin(), () -> light.update(light.intendedLevel, false), 1);
+                                scheduleLater(() -> light.update(light.intendedLevel, false), 1);
                             }
                         }
                     }
                 }
                 if (any) {
-                    Bukkit.getScheduler().scheduleSyncDelayedTask(NMSHandler.getJavaPlugin(), () -> sendNearbyChunkUpdates(chunk), 3);
+                    scheduleLater(() -> sendNearbyChunkUpdates(chunk), 3);
                 }
             }, 1);
         }
@@ -137,7 +130,7 @@ public class BlockLightImpl extends BlockLight {
             int cZ = packet.getZ();
             BitSet bitMask = packet.getLightData().getBlockYMask();
             List<byte[]> blockData = packet.getLightData().getBlockUpdates();
-            Bukkit.getScheduler().scheduleSyncDelayedTask(NMSHandler.getJavaPlugin(), () -> {
+            scheduleLater(() -> {
                 ChunkAccess chk = world.getChunk(cX, cZ, ChunkStatus.FULL, false);
                 if (!(chk instanceof LevelChunk)) {
                     return;
@@ -149,12 +142,12 @@ public class BlockLightImpl extends BlockLight {
                 boolean any = false;
                 for (BlockLight light : lights) {
                     if (((BlockLightImpl) light).checkIfChangedBy(bitMask, blockData)) {
-                        Bukkit.getScheduler().scheduleSyncDelayedTask(NMSHandler.getJavaPlugin(), () -> light.update(light.intendedLevel, false), 1);
+                        scheduleLater(() -> light.update(light.intendedLevel, false), 1);
                         any = true;
                     }
                 }
                 if (any) {
-                    Bukkit.getScheduler().scheduleSyncDelayedTask(NMSHandler.getJavaPlugin(), () -> sendNearbyChunkUpdates((LevelChunk) chk), 3);
+                    scheduleLater(() -> sendNearbyChunkUpdates((LevelChunk) chk), 3);
                 }
             }, 1);
         }
@@ -212,19 +205,19 @@ public class BlockLightImpl extends BlockLight {
         runResetFor((LevelChunk) ((CraftChunk) getChunk()).getHandle(ChunkStatus.FULL), ((CraftBlock) block).getPosition());
         if (updateChunk) {
             // This runnable cast is necessary despite what your IDE may claim
-            updateTask = Bukkit.getScheduler().runTaskLater(NMSHandler.getJavaPlugin(), (Runnable) this::sendNearbyChunkUpdates, 1);
+            setUpdateTaskLater((Runnable) this::sendNearbyChunkUpdates, 1);
         }
     }
 
     @Override
     public void update(int lightLevel, boolean updateChunk) {
         runResetFor((LevelChunk) ((CraftChunk) getChunk()).getHandle(ChunkStatus.FULL), ((CraftBlock) block).getPosition());
-        updateTask = Bukkit.getScheduler().runTaskLater(NMSHandler.getJavaPlugin(), () -> {
-            updateTask = null;
+        setUpdateTaskLater(() -> {
+            clearUpdateTask();
             runSetFor((LevelChunk) ((CraftChunk) chunk).getHandle(ChunkStatus.FULL), ((CraftBlock) block).getPosition(), lightLevel);
             if (updateChunk) {
                 // This runnable cast is necessary despite what your IDE may claim
-                updateTask = Bukkit.getScheduler().runTaskLater(NMSHandler.getJavaPlugin(), (Runnable) this::sendNearbyChunkUpdates, 1);
+                setUpdateTaskLater((Runnable) this::sendNearbyChunkUpdates, 1);
             }
         }, 1);
     }

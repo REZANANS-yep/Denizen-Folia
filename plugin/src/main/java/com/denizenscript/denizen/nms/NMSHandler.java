@@ -100,6 +100,10 @@ public abstract class NMSHandler {
 
     public abstract Sidebar createSidebar(Player player);
 
+    /** Creates a fresh scoreboard. On Folia, Bukkit's ScoreboardManager#getNewScoreboard throws
+     * UnsupportedOperationException, so the NMS implementation constructs one directly (vanilla Scoreboard wrapped in CraftScoreboard). */
+    public abstract org.bukkit.scoreboard.Scoreboard createScoreboard();
+
     public abstract BlockLight createBlockLight(Location location, int lightLevel, long ticks);
 
     public abstract PlayerProfile fillPlayerProfile(PlayerProfile playerProfile);

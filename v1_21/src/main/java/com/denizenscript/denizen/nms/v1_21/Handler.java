@@ -86,7 +86,6 @@ import org.bukkit.inventory.InventoryView;
 import org.bukkit.persistence.PersistentDataContainer;
 import org.joml.Quaternionf;
 import org.joml.Vector3f;
-import org.spigotmc.AsyncCatcher;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.reflect.Field;
@@ -135,17 +134,16 @@ public class Handler extends NMSHandler {
 
     private final ProfileEditor profileEditor = new ProfileEditorImpl();
 
-    private boolean wasAsyncCatcherEnabled;
-
     @Override
     public void disableAsyncCatcher() {
-        wasAsyncCatcherEnabled = AsyncCatcher.enabled;
-        AsyncCatcher.enabled = false;
+        // No-op on Folia. The old trick of flipping AsyncCatcher.enabled to run world access off-thread is gone:
+        // Folia enforces region ownership via TickThread/ensureSync checks that cannot be globally disabled.
+        // Cross-thread world access must instead be dispatched through FoliaScheduler (see the Folia threading layer).
     }
 
     @Override
     public void undisableAsyncCatcher() {
-        AsyncCatcher.enabled = wasAsyncCatcherEnabled;
+        // No-op on Folia (see disableAsyncCatcher).
     }
 
     @Override
@@ -161,6 +159,24 @@ public class Handler extends NMSHandler {
     @Override
     public Sidebar createSidebar(Player player) {
         return new SidebarImpl(player);
+    }
+
+    @Override
+    public org.bukkit.scoreboard.Scoreboard createScoreboard() {
+        // Folia's CraftScoreboardManager#getNewScoreboard throws UnsupportedOperationException. Vanilla CraftBukkit
+        // simply wraps a fresh net.minecraft Scoreboard in a CraftScoreboard, so replicate that directly. The
+        // CraftScoreboard constructor is package-private, hence reflection.
+        try {
+            net.minecraft.world.scores.Scoreboard nmsBoard = new net.minecraft.world.scores.Scoreboard();
+            java.lang.reflect.Constructor<org.bukkit.craftbukkit.v1_21_R7.scoreboard.CraftScoreboard> ctor =
+                    org.bukkit.craftbukkit.v1_21_R7.scoreboard.CraftScoreboard.class.getDeclaredConstructor(net.minecraft.world.scores.Scoreboard.class);
+            ctor.setAccessible(true);
+            return ctor.newInstance(nmsBoard);
+        }
+        catch (Throwable ex) {
+            com.denizenscript.denizencore.utilities.debugging.Debug.echoError(ex);
+            return null;
+        }
     }
 
     @Override

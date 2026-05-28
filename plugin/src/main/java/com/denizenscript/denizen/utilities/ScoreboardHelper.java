@@ -8,6 +8,7 @@ import com.denizenscript.denizen.objects.PlayerTag;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.configuration.ConfigurationSection;
+import com.denizenscript.denizen.nms.NMSHandler;
 import org.bukkit.scoreboard.*;
 
 import java.util.*;
@@ -167,12 +168,13 @@ public class ScoreboardHelper {
 
     /** Creates an anonymous new Scoreboard that isn't saved anywhere. */
     public static Scoreboard createScoreboard() {
-        return manager.getNewScoreboard();
+        // Via NMS - Folia's ScoreboardManager#getNewScoreboard throws UnsupportedOperationException.
+        return NMSHandler.instance.createScoreboard();
     }
 
     /** Creates a new Scoreboard with a certain id and stories it in the scoreboards map. */
     public static Scoreboard createScoreboard(String id) {
-        Scoreboard board = manager.getNewScoreboard();
+        Scoreboard board = NMSHandler.instance.createScoreboard();
         scoreboardMap.put(id.toUpperCase(), board);
         return board;
     }
@@ -188,9 +190,20 @@ public class ScoreboardHelper {
         }
     }
 
+    private static Scoreboard foliaMainBoard;
+
     /** Returns the server's main scoreboard, that isn't stored in the scoreboards map because Bukkit already saves it by itself. */
     public static Scoreboard getMain() {
-        return manager.getMainScoreboard();
+        try {
+            return manager.getMainScoreboard();
+        }
+        catch (UnsupportedOperationException ex) {
+            // Folia has no global main scoreboard; use a single lazily-created NMS-backed board as the shared "main".
+            if (foliaMainBoard == null) {
+                foliaMainBoard = NMSHandler.instance.createScoreboard();
+            }
+            return foliaMainBoard;
+        }
     }
 
     /** Returns a Scoreboard from the scoreboards map. */

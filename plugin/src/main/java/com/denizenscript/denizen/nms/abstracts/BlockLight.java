@@ -1,14 +1,13 @@
 package com.denizenscript.denizen.nms.abstracts;
 
-import com.denizenscript.denizen.nms.NMSHandler;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.utilities.blocks.ChunkCoordinate;
 import com.denizenscript.denizen.utilities.packets.NetworkInterceptHelper;
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
 import org.bukkit.Location;
 import org.bukkit.block.Block;
-import org.bukkit.scheduler.BukkitRunnable;
-import org.bukkit.scheduler.BukkitTask;
 
 import java.util.HashMap;
 import java.util.List;
@@ -26,8 +25,8 @@ public abstract class BlockLight {
     public int currentLight;
     public int cachedLight;
     public int intendedLevel;
-    public BukkitTask removeTask;
-    public BukkitTask updateTask;
+    public ScheduledTask removeTask;
+    public ScheduledTask updateTask;
 
     public Chunk getChunk() {
         chunk = Bukkit.getWorld(chunkCoord.worldName).getChunkAt(chunkCoord.x, chunkCoord.z);
@@ -48,13 +47,12 @@ public abstract class BlockLight {
 
     public void removeLater(long ticks) {
         if (ticks > 0) {
-            this.removeTask = new BukkitRunnable() {
-                @Override
-                public void run() {
-                    removeTask = null;
-                    removeLight(block.getLocation());
-                }
-            }.runTaskLater(NMSHandler.getJavaPlugin(), ticks);
+            // runOnRegionDelayed: removing the block light resets/updates the block at its location (region-owned world
+            // state), so it must run on that location's owning region thread after the given delay.
+            this.removeTask = FoliaScheduler.runOnRegionDelayed(block.getLocation(), () -> {
+                removeTask = null;
+                removeLight(block.getLocation());
+            }, ticks);
         }
     }
 
@@ -82,6 +80,36 @@ public abstract class BlockLight {
 
     public void reset(boolean updateChunk) {
         this.update(originalLight, updateChunk);
+    }
+
+    // --- Folia task helpers. These return void so NMS subclasses (which compile against spigot-api and therefore
+    // cannot see io.papermc.paper.threadedregions.scheduler.ScheduledTask) can schedule/cancel without referencing it. ---
+
+    /** Schedules a one-shot task on the global region after a delay (ticks). */
+    public static void scheduleLater(Runnable runnable, long delayTicks) {
+        FoliaScheduler.runGlobalDelayed(runnable, delayTicks);
+    }
+
+    /** Stores a delayed update task on the global region, replacing any current handle. */
+    public void setUpdateTaskLater(Runnable runnable, long delayTicks) {
+        updateTask = FoliaScheduler.runGlobalDelayed(runnable, delayTicks);
+    }
+
+    /** Clears the stored update-task handle without cancelling (the task is already running/finished). */
+    public void clearUpdateTask() {
+        updateTask = null;
+    }
+
+    /** Cancels and clears both the remove and update task handles. */
+    public void cancelTasks() {
+        if (updateTask != null) {
+            updateTask.cancel();
+            updateTask = null;
+        }
+        if (removeTask != null) {
+            removeTask.cancel();
+            removeTask = null;
+        }
     }
 
     public abstract void update(int lightLevel, boolean updateChunk);
