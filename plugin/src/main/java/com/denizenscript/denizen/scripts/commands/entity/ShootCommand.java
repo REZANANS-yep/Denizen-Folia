@@ -4,6 +4,7 @@ import com.denizenscript.denizen.Denizen;
 import com.denizenscript.denizen.utilities.Conversion;
 import com.denizenscript.denizen.utilities.Utilities;
 import com.denizenscript.denizen.utilities.command.TabCompleteHelper;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.utilities.entity.Velocity;
 import com.denizenscript.denizencore.utilities.CoreConfiguration;
 import com.denizenscript.denizencore.utilities.debugging.Debug;
@@ -316,11 +317,15 @@ public class ShootCommand extends AbstractCommand implements Listener, Holdable 
         final LocationTag start = new LocationTag(lastEntity.getLocation());
         // A task used to trigger a script if the entity is no longer
         // being shot, when the script argument is used
-        BukkitRunnable task = new BukkitRunnable() {
-            boolean flying = true;
-            LocationTag lastLocation = null;
-            Vector lastVelocity = null;
-            public void run() {
+        // Folia: repeating task reads/operates on a single entity (lastEntity location/velocity/spawned) -> runOnEntityRepeating on that entity.
+        final boolean[] flyingHolder = new boolean[]{true};
+        final LocationTag[] lastLocationHolder = new LocationTag[]{null};
+        final Vector[] lastVelocityHolder = new Vector[]{null};
+        final io.papermc.paper.threadedregions.scheduler.ScheduledTask[] taskHolder = new io.papermc.paper.threadedregions.scheduler.ScheduledTask[1];
+        Runnable shootTask = () -> {
+                boolean flying = flyingHolder[0];
+                LocationTag lastLocation = lastLocationHolder[0];
+                Vector lastVelocity = lastVelocityHolder[0];
                 // If the entity is no longer spawned, stop the task
                 if (!lastEntity.isSpawned()) {
                     if (CoreConfiguration.debugVerbose) {
@@ -350,7 +355,9 @@ public class ShootCommand extends AbstractCommand implements Listener, Holdable 
                 // Stop the task and run the script if conditions
                 // are met
                 if (!flying) {
-                    this.cancel();
+                    if (taskHolder[0] != null) {
+                        taskHolder[0].cancel();
+                    }
                     ListTag hitEntities = new ListTag();
                     for (EntityTag entity : entities) {
                         if (arrows.containsKey(entity.getUUID())) {
@@ -364,11 +371,12 @@ public class ShootCommand extends AbstractCommand implements Listener, Holdable 
                     if (lastLocation == null) {
                         lastLocation = start;
                     }
-                    scriptEntry.saveObject("location", new LocationTag(lastLocation));
+                    final LocationTag lastLocationFinal = lastLocation;
+                    scriptEntry.saveObject("location", new LocationTag(lastLocationFinal));
                     scriptEntry.saveObject("hit_entities", hitEntities);
                     if (script != null) {
                         Consumer<ScriptQueue> configure = (queue) -> {
-                            queue.addDefinition("location", new LocationTag(lastLocation));
+                            queue.addDefinition("location", new LocationTag(lastLocationFinal));
                             queue.addDefinition("shot_entities", entityList);
                             queue.addDefinition("last_entity", lastEntity);
                             queue.addDefinition("hit_entities", hitEntities);
@@ -382,10 +390,12 @@ public class ShootCommand extends AbstractCommand implements Listener, Holdable 
                     lastLocation = lastEntity.getLocation();
                     lastVelocity = lastEntity.getVelocity();
                 }
-            }
+                flyingHolder[0] = flying;
+                lastLocationHolder[0] = lastLocation;
+                lastVelocityHolder[0] = lastVelocity;
         };
         if (script != null || scriptEntry.shouldWaitFor()) {
-            task.runTaskTimer(Denizen.getInstance(), 1, 2);
+            taskHolder[0] = FoliaScheduler.runOnEntityRepeating(lastEntity.getBukkitEntity(), shootTask, () -> {}, 1, 2);
         }
     }
 

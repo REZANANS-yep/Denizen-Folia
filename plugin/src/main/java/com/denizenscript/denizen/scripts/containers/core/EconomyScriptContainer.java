@@ -2,6 +2,7 @@ package com.denizenscript.denizen.scripts.containers.core;
 
 import com.denizenscript.denizen.Denizen;
 import com.denizenscript.denizen.objects.PlayerTag;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.tags.BukkitTagContext;
 import com.denizenscript.denizen.utilities.Settings;
 import com.denizenscript.denizen.utilities.implementation.BukkitScriptEntryData;
@@ -27,7 +28,7 @@ import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.Future;
+import java.util.concurrent.CompletableFuture;
 
 public class EconomyScriptContainer extends ScriptContainer {
 
@@ -138,7 +139,9 @@ public class EconomyScriptContainer extends ScriptContainer {
                     return null;
                 }
                 try {
-                    Future<String> future = Bukkit.getScheduler().callSyncMethod(Denizen.instance, () -> autoTag(value, player, defProvider));
+                    // Folia: pass tag eval back to the main thread; server-wide data work -> global scheduler. Called from a non-tick thread so blocking .get() is safe.
+                    CompletableFuture<String> future = new CompletableFuture<>();
+                    FoliaScheduler.runGlobal(() -> future.complete(autoTag(value, player, defProvider)));
                     return future.get();
                 }
                 catch (Throwable ex) {
@@ -157,7 +160,9 @@ public class EconomyScriptContainer extends ScriptContainer {
                     return null;
                 }
                 try {
-                    Future<String> future = Bukkit.getScheduler().callSyncMethod(Denizen.instance, () -> runSubScript(pathName, player, amount));
+                    // Folia: pass sub-script run back to the main thread; server-wide data work -> global scheduler. Called from a non-tick thread so blocking .get() is safe.
+                    CompletableFuture<String> future = new CompletableFuture<>();
+                    FoliaScheduler.runGlobal(() -> future.complete(runSubScript(pathName, player, amount)));
                     return future.get();
                 }
                 catch (Throwable ex) {

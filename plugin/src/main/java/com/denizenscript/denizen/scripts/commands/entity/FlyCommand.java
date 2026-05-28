@@ -2,6 +2,7 @@ package com.denizenscript.denizen.scripts.commands.entity;
 
 import com.denizenscript.denizen.Denizen;
 import com.denizenscript.denizen.utilities.Conversion;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.utilities.Utilities;
 import com.denizenscript.denizencore.utilities.debugging.Debug;
 import com.denizenscript.denizen.utilities.entity.Position;
@@ -187,57 +188,63 @@ public class FlyCommand extends AbstractCommand {
         }
         final Entity entity = entities.get(entities.size() - 1).getBukkitEntity();
         final LivingEntity finalController = controller != null ? controller.getLivingEntity() : null;
-        BukkitRunnable task = new BukkitRunnable() {
-            Location location = null;
-            Boolean flying = true;
-            public void run() {
-                if (freeflight) {
-                    // If freeflight is on, and the flying entity
-                    // is ridden by another entity, let it keep
-                    // flying where the controller is looking
-                    if (!entity.isEmpty() && finalController.isInsideVehicle()) {
-                        location = finalController.getEyeLocation().add(finalController.getEyeLocation().getDirection().multiply(30));
-                    }
-                    else {
-                        flying = false;
-                    }
-                }
-                else {
-                    // If freelight is not on, keep flying only as long
-                    // as there are destinations left
-                    if (destinations.size() > 0) {
-                        location = destinations.get(0);
-                    }
-                    else {
-                        flying = false;
-                    }
-                }
-                if (flying && entity.isValid()) {
-                    // To avoid excessive turbulence, only have the entity rotate
-                    // when it really needs to
-                    if (!NMSHandler.entityHelper.isFacingLocation(entity, location, rotationThreshold)) {
-                        NMSHandler.entityHelper.faceLocation(entity, location);
-                    }
-                    Vector v1 = entity.getLocation().toVector();
-                    Vector v2 = location.toVector();
-                    Vector v3 = v2.clone().subtract(v1).normalize().multiply(speed);
-                    entity.setVelocity(v3);
-                    // If freeflight is off, check if the entity has reached its
-                    // destination, and remove the destination if that happens
-                    // to be the case
-                    if (!freeflight) {
-                        if (Math.abs(v2.getX() - v1.getX()) < 2 && Math.abs(v2.getY() - v1.getY()) < 2
-                                && Math.abs(v2.getZ() - v1.getZ()) < 2) {
-                            destinations.remove(0);
-                        }
-                    }
+        // Folia: repeating task moves/rotates a specific entity (setVelocity/faceLocation) -> runOnEntityRepeating on that entity.
+        // Holder for the scheduled task so the lambda can cancel itself.
+        final io.papermc.paper.threadedregions.scheduler.ScheduledTask[] taskHolder = new io.papermc.paper.threadedregions.scheduler.ScheduledTask[1];
+        final Location[] locationHolder = new Location[]{null};
+        final Boolean[] flyingHolder = new Boolean[]{true};
+        taskHolder[0] = FoliaScheduler.runOnEntityRepeating(entity, () -> {
+            Location location = locationHolder[0];
+            boolean flying = flyingHolder[0];
+            if (freeflight) {
+                // If freeflight is on, and the flying entity
+                // is ridden by another entity, let it keep
+                // flying where the controller is looking
+                if (!entity.isEmpty() && finalController.isInsideVehicle()) {
+                    location = finalController.getEyeLocation().add(finalController.getEyeLocation().getDirection().multiply(30));
                 }
                 else {
                     flying = false;
-                    this.cancel();
                 }
             }
-        };
-        task.runTaskTimer(Denizen.getInstance(), 0, 3);
+            else {
+                // If freelight is not on, keep flying only as long
+                // as there are destinations left
+                if (destinations.size() > 0) {
+                    location = destinations.get(0);
+                }
+                else {
+                    flying = false;
+                }
+            }
+            if (flying && entity.isValid()) {
+                // To avoid excessive turbulence, only have the entity rotate
+                // when it really needs to
+                if (!NMSHandler.entityHelper.isFacingLocation(entity, location, rotationThreshold)) {
+                    NMSHandler.entityHelper.faceLocation(entity, location);
+                }
+                Vector v1 = entity.getLocation().toVector();
+                Vector v2 = location.toVector();
+                Vector v3 = v2.clone().subtract(v1).normalize().multiply(speed);
+                entity.setVelocity(v3);
+                // If freeflight is off, check if the entity has reached its
+                // destination, and remove the destination if that happens
+                // to be the case
+                if (!freeflight) {
+                    if (Math.abs(v2.getX() - v1.getX()) < 2 && Math.abs(v2.getY() - v1.getY()) < 2
+                            && Math.abs(v2.getZ() - v1.getZ()) < 2) {
+                        destinations.remove(0);
+                    }
+                }
+            }
+            else {
+                flying = false;
+                if (taskHolder[0] != null) {
+                    taskHolder[0].cancel();
+                }
+            }
+            locationHolder[0] = location;
+            flyingHolder[0] = flying;
+        }, () -> {}, 0, 3);
     }
 }

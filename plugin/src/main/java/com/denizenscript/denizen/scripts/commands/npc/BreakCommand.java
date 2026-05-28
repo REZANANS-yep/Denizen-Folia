@@ -1,7 +1,9 @@
 package com.denizenscript.denizen.scripts.commands.npc;
 
 import com.denizenscript.denizen.Denizen;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.utilities.Utilities;
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import com.denizenscript.denizencore.utilities.debugging.Debug;
 import com.denizenscript.denizen.objects.LocationTag;
 import com.denizenscript.denizen.objects.MaterialTag;
@@ -15,7 +17,6 @@ import com.denizenscript.denizencore.scripts.commands.AbstractCommand;
 import com.denizenscript.denizencore.scripts.commands.Holdable;
 import net.citizensnpcs.api.ai.tree.BehaviorStatus;
 import net.citizensnpcs.api.npc.BlockBreaker;
-import org.bukkit.Bukkit;
 
 import java.util.HashMap;
 
@@ -138,8 +139,9 @@ public class BreakCommand extends AbstractCommand implements Holdable {
 
         BlockBreaker breaker = npc.getCitizen().getBlockBreaker(location.getBlock(), config);
         if (breaker.shouldExecute()) {
+            // Folia: breaking acts on a specific block/location -> region scheduler, repeating every tick from 0
             TaskRunnable run = new TaskRunnable(breaker);
-            run.taskId = Bukkit.getScheduler().scheduleSyncRepeatingTask(Denizen.getInstance(), run, 0, 1);
+            run.task = FoliaScheduler.runOnRegionRepeating(location, run, 0, 1);
         }
         else {
             se.setFinished(true);
@@ -147,7 +149,7 @@ public class BreakCommand extends AbstractCommand implements Holdable {
     }
 
     private static class TaskRunnable implements Runnable {
-        private int taskId;
+        private ScheduledTask task;
         private final BlockBreaker breaker;
 
         public TaskRunnable(BlockBreaker breaker) {
@@ -157,7 +159,10 @@ public class BreakCommand extends AbstractCommand implements Holdable {
         @Override
         public void run() {
             if (breaker.run() != BehaviorStatus.RUNNING) {
-                Bukkit.getScheduler().cancelTask(taskId);
+                // Folia: self-cancel via the stored region task
+                if (task != null) {
+                    task.cancel();
+                }
                 breaker.reset();
             }
         }

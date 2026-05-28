@@ -2,6 +2,7 @@ package com.denizenscript.denizen.scripts.commands.entity;
 
 import com.denizenscript.denizen.Denizen;
 import com.denizenscript.denizen.nms.NMSHandler;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.objects.EntityTag;
 import com.denizenscript.denizen.objects.ItemTag;
 import com.denizenscript.denizen.objects.PlayerTag;
@@ -139,7 +140,7 @@ public class FakeEquipCommand extends AbstractCommand {
 
         public ItemTag hand, offhand, head, chest, legs, boots;
 
-        public BukkitTask cancelTask;
+        public io.papermc.paper.threadedregions.scheduler.ScheduledTask cancelTask;
 
         public boolean isEmpty() {
             return hand == null && offhand == null && head == null && chest == null && legs == null && boots == null;
@@ -217,26 +218,25 @@ public class FakeEquipCommand extends AbstractCommand {
                     entityData.copyFrom(equipment);
                 }
                 if (entityData != null) {
-                    if (entityData.cancelTask != null && !entityData.cancelTask.isCancelled()) {
+                    if (entityData.cancelTask != null) {
                         entityData.cancelTask.cancel();
                         entityData.cancelTask = null;
                     }
                     if (duration != null && duration.getTicks() > 0) {
-                        entityData.cancelTask = new BukkitRunnable() {
-                            @Override
-                            public void run() {
-                                entityData.cancelTask = null;
-                                HashMap<UUID, EquipmentOverride> playersMap = overrides.get(player.getUUID());
-                                if (playersMap != null) {
-                                    if (playersMap.remove(entity.getUUID()) != null) {
-                                        if (playersMap.isEmpty()) {
-                                            overrides.remove(player.getUUID());
-                                        }
-                                        NMSHandler.packetHelper.resetEquipment(player.getPlayerEntity(), livingEntity);
+                        final EquipmentOverride entityDataFinal = entityData;
+                        // Folia: delayed task sends an equipment-reset packet to a specific viewing player -> runOnEntityDelayed on that player.
+                        entityData.cancelTask = FoliaScheduler.runOnEntityDelayed(player.getPlayerEntity(), () -> {
+                            entityDataFinal.cancelTask = null;
+                            HashMap<UUID, EquipmentOverride> playersMap2 = overrides.get(player.getUUID());
+                            if (playersMap2 != null) {
+                                if (playersMap2.remove(entity.getUUID()) != null) {
+                                    if (playersMap2.isEmpty()) {
+                                        overrides.remove(player.getUUID());
                                     }
+                                    NMSHandler.packetHelper.resetEquipment(player.getPlayerEntity(), livingEntity);
                                 }
                             }
-                        }.runTaskLater(Denizen.getInstance(), duration.getTicks());
+                        }, null, duration.getTicks());
                     }
                 }
                 NMSHandler.packetHelper.resetEquipment(player.getPlayerEntity(), livingEntity);

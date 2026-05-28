@@ -1,6 +1,6 @@
 package com.denizenscript.denizen.scripts.commands.world;
 
-import com.denizenscript.denizen.Denizen;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.utilities.Utilities;
 import com.denizenscript.denizencore.utilities.debugging.Debug;
 import com.denizenscript.denizen.objects.WorldTag;
@@ -9,7 +9,7 @@ import com.denizenscript.denizencore.objects.Argument;
 import com.denizenscript.denizencore.objects.core.DurationTag;
 import com.denizenscript.denizencore.scripts.ScriptEntry;
 import com.denizenscript.denizencore.scripts.commands.AbstractCommand;
-import org.bukkit.Bukkit;
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import org.bukkit.WeatherType;
 import org.bukkit.entity.Player;
 
@@ -109,7 +109,7 @@ public class WeatherCommand extends AbstractCommand {
         scriptEntry.defaultObject("world", Utilities.entryDefaultWorld(scriptEntry, false));
     }
 
-    public HashMap<UUID, Integer> resetTasks = new HashMap<>();
+    public HashMap<UUID, ScheduledTask> resetTasks = new HashMap<>();
 
     @Override
     public void execute(ScriptEntry scriptEntry) {
@@ -142,9 +142,9 @@ public class WeatherCommand extends AbstractCommand {
         }
         else {
             Player player = Utilities.getEntryPlayer(scriptEntry).getPlayerEntity();
-            Integer existingTask = resetTasks.get(player.getUniqueId());
+            ScheduledTask existingTask = resetTasks.get(player.getUniqueId());
             if (existingTask != null) {
-                Bukkit.getScheduler().cancelTask(existingTask);
+                existingTask.cancel();
                 resetTasks.remove(player.getUniqueId());
             }
             if (value == Value.SUNNY) {
@@ -157,7 +157,8 @@ public class WeatherCommand extends AbstractCommand {
                 player.resetPlayerWeather();
             }
             if (resetAfter != null) {
-                int newTask = Bukkit.getScheduler().scheduleSyncDelayedTask(Denizen.getInstance(), player::resetPlayerWeather, resetAfter.getTicks());
+                // runOnEntityDelayed + saved ScheduledTask: player-personal weather reset targets a specific Player entity and is cancellable.
+                ScheduledTask newTask = FoliaScheduler.runOnEntityDelayed(player, player::resetPlayerWeather, null, resetAfter.getTicks());
                 resetTasks.put(player.getUniqueId(), newTask);
             }
         }

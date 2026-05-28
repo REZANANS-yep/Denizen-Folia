@@ -2,6 +2,7 @@ package com.denizenscript.denizen.scripts.commands.entity;
 
 import com.denizenscript.denizen.Denizen;
 import com.denizenscript.denizen.nms.interfaces.EntityHelper;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.utilities.Utilities;
 import com.denizenscript.denizencore.utilities.debugging.Debug;
 import com.denizenscript.denizen.nms.NMSHandler;
@@ -141,42 +142,46 @@ public class RotateCommand extends AbstractCommand implements Holdable {
         if (cancel) {
             return;
         }
-        BukkitRunnable task = new BukkitRunnable() {
-            int ticks = 0;
-            int maxTicks = duration.getTicksAsInt();
-            ArrayList<EntityTag> unusedEntities = new ArrayList<>();
-            @Override
-            public void run() {
-                if (entities.isEmpty()) {
-                    scriptEntry.setFinished(true);
-                    this.cancel();
-                }
-                else if (infinite || ticks < maxTicks) {
-                    for (EntityTag entity : entities) {
-                        if (entity.isSpawned() && rotatingEntities.contains(entity.getUUID())) {
-                            NMSHandler.entityHelper.rotate(entity.getBukkitEntity(),
-                                    EntityHelper.normalizeYaw(entity.getLocation().getYaw() + yaw.asFloat()),
-                                    entity.getLocation().getPitch() + pitch.asFloat());
-                        }
-                        else {
-                            rotatingEntities.remove(entity.getUUID());
-                            unusedEntities.add(entity);
-                        }
-                    }
-                    if (!unusedEntities.isEmpty()) {
-                        for (EntityTag unusedEntity : unusedEntities) {
-                            entities.remove(unusedEntity);
-                        }
-                        unusedEntities.clear();
-                    }
-                    ticks = (int) (ticks + frequency.getTicks());
-                }
-                else {
-                    scriptEntry.setFinished(true);
-                    this.cancel();
+        // Folia: single repeating timer iterates over a whole list of entities (possibly across regions) and drives the ~waitable's shared
+        // tick/finish state -> runGlobalRepeating. NOTE flagged as ambiguous: entity rotation must run on each entity's owning region thread;
+        // a shared global timer touching many entities can throw at runtime. See report.
+        final int[] ticksHolder = new int[]{0};
+        final int maxTicks = duration.getTicksAsInt();
+        final ArrayList<EntityTag> unusedEntities = new ArrayList<>();
+        final io.papermc.paper.threadedregions.scheduler.ScheduledTask[] taskHolder = new io.papermc.paper.threadedregions.scheduler.ScheduledTask[1];
+        taskHolder[0] = FoliaScheduler.runGlobalRepeating(() -> {
+            if (entities.isEmpty()) {
+                scriptEntry.setFinished(true);
+                if (taskHolder[0] != null) {
+                    taskHolder[0].cancel();
                 }
             }
-        };
-        task.runTaskTimer(Denizen.getInstance(), 0, frequency.getTicks());
+            else if (infinite || ticksHolder[0] < maxTicks) {
+                for (EntityTag entity : entities) {
+                    if (entity.isSpawned() && rotatingEntities.contains(entity.getUUID())) {
+                        NMSHandler.entityHelper.rotate(entity.getBukkitEntity(),
+                                EntityHelper.normalizeYaw(entity.getLocation().getYaw() + yaw.asFloat()),
+                                entity.getLocation().getPitch() + pitch.asFloat());
+                    }
+                    else {
+                        rotatingEntities.remove(entity.getUUID());
+                        unusedEntities.add(entity);
+                    }
+                }
+                if (!unusedEntities.isEmpty()) {
+                    for (EntityTag unusedEntity : unusedEntities) {
+                        entities.remove(unusedEntity);
+                    }
+                    unusedEntities.clear();
+                }
+                ticksHolder[0] = (int) (ticksHolder[0] + frequency.getTicks());
+            }
+            else {
+                scriptEntry.setFinished(true);
+                if (taskHolder[0] != null) {
+                    taskHolder[0].cancel();
+                }
+            }
+        }, 0, frequency.getTicks());
     }
 }

@@ -1,7 +1,9 @@
 package com.denizenscript.denizen.scripts.commands.npc;
 
 import com.denizenscript.denizen.Denizen;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.utilities.Utilities;
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import com.denizenscript.denizencore.utilities.debugging.Debug;
 import com.denizenscript.denizen.objects.NPCTag;
 import com.denizenscript.denizencore.exceptions.InvalidArgumentsException;
@@ -90,7 +92,7 @@ public class PauseCommand extends AbstractCommand {
     // - resume waypoints
     // -->
 
-    private Map<String, Integer> durations = new HashMap<>();
+    private Map<String, ScheduledTask> durations = new HashMap<>();
 
     enum PauseType {ACTIVITY, WAYPOINTS, NAVIGATION}
 
@@ -130,7 +132,8 @@ public class PauseCommand extends AbstractCommand {
         if (duration != null) {
             if (durations.containsKey(npc.getCitizen().getId() + pauseType.name())) {
                 try {
-                    Denizen.getInstance().getServer().getScheduler().cancelTask(durations.get(npc.getCitizen().getId() + pauseType.name()));
+                    // Folia: cancel the stored entity-scheduled task
+                    durations.get(npc.getCitizen().getId() + pauseType.name()).cancel();
                 }
                 catch (Exception e) {
                     Debug.echoError(scriptEntry, "There was an error pausing that!");
@@ -140,13 +143,13 @@ public class PauseCommand extends AbstractCommand {
             Debug.echoDebug(scriptEntry, "Running delayed task: Unpause " + pauseType);
             final NPCTag theNpc = npc;
             final ScriptEntry se = scriptEntry;
-            durations.put(npc.getId() + pauseType.name(), Denizen.getInstance()
-                    .getServer().getScheduler().scheduleSyncDelayedTask(Denizen.getInstance(),
+            // Folia: delayed task acts on the NPC's entity -> entity scheduler
+            durations.put(npc.getId() + pauseType.name(), FoliaScheduler.runOnEntityDelayed(npc.getEntity(),
                             () -> {
                                 Debug.echoDebug(se, "Running delayed task: Pausing " + pauseType);
                                 pause(theNpc, pauseType, false);
 
-                            }, duration.getTicks()));
+                            }, null, duration.getTicks()));
         }
     }
 

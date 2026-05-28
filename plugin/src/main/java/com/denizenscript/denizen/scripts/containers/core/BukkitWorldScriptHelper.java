@@ -4,6 +4,7 @@ import com.denizenscript.denizen.Denizen;
 import com.denizenscript.denizen.events.world.TimeChangeScriptEvent;
 import com.denizenscript.denizen.nms.NMSHandler;
 import com.denizenscript.denizen.objects.*;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.utilities.ScoreboardHelper;
 import com.denizenscript.denizencore.utilities.debugging.Debug;
 import com.denizenscript.denizen.utilities.Settings;
@@ -38,8 +39,8 @@ public class BukkitWorldScriptHelper implements Listener {
 
     public void serverStartEvent() {
         long ticks = Settings.worldScriptTimeEventFrequency().getTicks();
-        Bukkit.getScheduler().scheduleSyncRepeatingTask(Denizen.getInstance(),
-                this::timeEvent, ticks, ticks);
+        // Folia: iterates all worlds, server-wide -> global scheduler, repeating with init=period=ticks
+        FoliaScheduler.runGlobalRepeating(this::timeEvent, ticks, ticks);
     }
 
     private final Map<String, Integer> current_time = new HashMap<>();
@@ -82,7 +83,8 @@ public class BukkitWorldScriptHelper implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerChat(final AsyncPlayerChatEvent event) {
-        Bukkit.getScheduler().runTaskLater(Denizen.instance, () -> {
+        // Folia: debug-logging only, no world/entity state touched -> global scheduler, 1 tick delay
+        FoliaScheduler.runGlobalDelayed(() -> {
             // If currently recording debug information, add the chat message to debug output
             if (CoreConfiguration.shouldRecordDebug) {
                 Debug.log(ChatColor.DARK_GREEN + "CHAT: " + event.getPlayer().getName() + ": " + event.getMessage());

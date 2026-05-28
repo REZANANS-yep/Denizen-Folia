@@ -3,6 +3,7 @@ package com.denizenscript.denizen.scripts.commands.world;
 import com.denizenscript.denizen.Denizen;
 import com.denizenscript.denizen.nms.NMSHandler;
 import com.denizenscript.denizen.objects.*;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.utilities.Utilities;
 import com.denizenscript.denizen.utilities.command.TabCompleteHelper;
 import com.denizenscript.denizencore.exceptions.InvalidArgumentsException;
@@ -36,7 +37,7 @@ import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityChangeBlockEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.scheduler.BukkitRunnable;
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -50,7 +51,8 @@ public class ModifyBlockCommand extends AbstractCommand implements Listener, Hol
         setRequiredArguments(2, 8);
         Bukkit.getPluginManager().registerEvents(this, Denizen.getInstance());
         // Keep the list empty automatically - we don't want to still block physics so much later that something else edited the block!
-        Bukkit.getScheduler().scheduleSyncRepeatingTask(Denizen.getInstance(), () -> {
+        // runGlobalRepeating (init 2, period 2): pure server-wide bookkeeping (tick counter + clearing the physics-suppression set), not tied to any region.
+        FoliaScheduler.runGlobalRepeating(() -> {
             tick++;
             if (physitick < tick - 1) {
                 block_physics.clear();
@@ -291,58 +293,70 @@ public class ModifyBlockCommand extends AbstractCommand implements Listener, Hol
         no_physics = !doPhysics;
         if (delayed.asBoolean()) {
             final long maxDelay = maxDelayMs.asLong();
-            new BukkitRunnable() {
-                int index = 0;
-                @Override
-                public void run() {
-                    try {
-                        long start = CoreUtilities.monotonicMillis();
-                        LocationTag loc;
+            // Determine the first location up front so the repeating task can be pinned to its region.
+            LocationTag firstLoc;
+            if (locations != null) {
+                firstLoc = locations.get(0);
+            }
+            else {
+                firstLoc = getLocAt(location_list, 0, scriptEntry);
+            }
+            if (isLocationBad(scriptEntry, firstLoc)) {
+                scriptEntry.setFinished(true);
+                return;
+            }
+            // runOnRegionRepeating (init 1, period 1): the delayed edit places blocks, so it must run on a region thread; pinned to the first location's region. Saved as ScheduledTask so it can cancel itself when finished.
+            // NOTE (Folia): this single repeating task is pinned to the FIRST location's region. If the location set spans multiple regions, edits on a foreign region will throw IllegalStateException. See report.
+            final ScheduledTask[] taskHolder = new ScheduledTask[1];
+            final int[] indexHolder = new int[1];
+            taskHolder[0] = FoliaScheduler.runOnRegionRepeating(firstLoc, () -> {
+                try {
+                    long start = CoreUtilities.monotonicMillis();
+                    LocationTag loc;
+                    if (locations != null) {
+                        loc = locations.get(0);
+                    }
+                    else {
+                        loc = getLocAt(location_list, 0, scriptEntry);
+                    }
+                    if (isLocationBad(scriptEntry, loc)) {
+                        scriptEntry.setFinished(true);
+                        taskHolder[0].cancel();
+                        return;
+                    }
+                    boolean was_static = preSetup(loc);
+                    while ((locations != null && locations.size() > indexHolder[0]) || (location_list != null && location_list.size() > indexHolder[0])) {
+                        LocationTag nLoc;
                         if (locations != null) {
-                            loc = locations.get(0);
+                            nLoc = locations.get(indexHolder[0]);
                         }
                         else {
-                            loc = getLocAt(location_list, 0, scriptEntry);
+                            nLoc = getLocAt(location_list, indexHolder[0], scriptEntry);
                         }
-                        if (isLocationBad(scriptEntry, loc)) {
+                        if (isLocationBad(scriptEntry, nLoc)) {
                             scriptEntry.setFinished(true);
-                            cancel();
+                            taskHolder[0].cancel();
                             return;
                         }
-                        boolean was_static = preSetup(loc);
-                        while ((locations != null && locations.size() > index) || (location_list != null && location_list.size() > index)) {
-                            LocationTag nLoc;
-                            if (locations != null) {
-                                nLoc = locations.get(index);
-                            }
-                            else {
-                                nLoc = getLocAt(location_list, index, scriptEntry);
-                            }
-                            if (isLocationBad(scriptEntry, nLoc)) {
-                                scriptEntry.setFinished(true);
-                                cancel();
-                                return;
-                            }
-                            handleLocation(nLoc, index, materialList, doPhysics, natural, radius, height, depth, percs, sourcePlayer, scriptEntry);
-                            index++;
-                            if (CoreUtilities.monotonicMillis() - start > maxDelay) {
-                                break;
-                            }
-                        }
-                        postComplete(loc, was_static);
-                        if ((locations != null && locations.size() == index) || (location_list != null && location_list.size() == index)) {
-                            if (script != null) {
-                                ScriptUtilities.createAndStartQueue(script.getContainer(), null, scriptEntry.entryData, null, null, null, null, null, scriptEntry);
-                            }
-                            scriptEntry.setFinished(true);
-                            cancel();
+                        handleLocation(nLoc, indexHolder[0], materialList, doPhysics, natural, radius, height, depth, percs, sourcePlayer, scriptEntry);
+                        indexHolder[0]++;
+                        if (CoreUtilities.monotonicMillis() - start > maxDelay) {
+                            break;
                         }
                     }
-                    catch (Throwable ex) {
-                        Debug.echoError(ex);
+                    postComplete(loc, was_static);
+                    if ((locations != null && locations.size() == indexHolder[0]) || (location_list != null && location_list.size() == indexHolder[0])) {
+                        if (script != null) {
+                            ScriptUtilities.createAndStartQueue(script.getContainer(), null, scriptEntry.entryData, null, null, null, null, null, scriptEntry);
+                        }
+                        scriptEntry.setFinished(true);
+                        taskHolder[0].cancel();
                     }
                 }
-            }.runTaskTimer(Denizen.getInstance(), 1, 1);
+                catch (Throwable ex) {
+                    Debug.echoError(ex);
+                }
+            }, 1, 1);
         }
         else {
             LocationTag loc;

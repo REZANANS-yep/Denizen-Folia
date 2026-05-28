@@ -1,5 +1,6 @@
 package com.denizenscript.denizen.scripts.commands.world;
 
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.utilities.blocks.ChunkCoordinate;
 import com.denizenscript.denizencore.utilities.debugging.Debug;
 import com.denizenscript.denizen.utilities.depends.Depends;
@@ -153,7 +154,8 @@ public class ChunkLoadCommand extends AbstractCommand implements Listener {
                     }
                     chunk.addPluginChunkTicket(Denizen.getInstance());
                     if (length.getSeconds() > 0) {
-                        Bukkit.getScheduler().scheduleSyncDelayedTask(Denizen.getInstance(), () -> {
+                        // runOnRegionDelayed: the deferred ticket removal mutates a specific chunk, so it must run on that chunk's region thread. Location built at the chunk's block origin.
+                        FoliaScheduler.runOnRegionDelayed(chunk.getBlock(0, 0, 0).getLocation(), () -> {
                             if (chunkDelays.containsKey(coord) && chunkDelays.get(coord) <= CoreUtilities.monotonicMillis()) {
                                 chunk.removePluginChunkTicket(Denizen.getInstance());
                                 chunkDelays.remove(coord);

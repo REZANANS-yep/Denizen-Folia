@@ -2,6 +2,7 @@ package com.denizenscript.denizen.scripts.commands.entity;
 
 import com.denizenscript.denizen.Denizen;
 import com.denizenscript.denizen.utilities.Conversion;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.utilities.Utilities;
 import com.denizenscript.denizencore.utilities.debugging.Debug;
 import com.denizenscript.denizen.utilities.entity.Position;
@@ -222,11 +223,13 @@ public class PushCommand extends AbstractCommand implements Holdable {
         final Vector v2 = destination.toVector();
         final Vector Origin = originLocation.toVector();
         final int prec = precision.asInt();
-        BukkitRunnable task = new BukkitRunnable() {
-            int runs = 0;
-            LocationTag lastLocation;
-            @Override
-            public void run() {
+        // Folia: repeating task teleports/setVelocity on a single entity (lastEntity) and reads nearby blocks -> runOnEntityRepeating on that entity.
+        final int[] runsHolder = new int[]{0};
+        final LocationTag[] lastLocationHolder = new LocationTag[]{null};
+        final io.papermc.paper.threadedregions.scheduler.ScheduledTask[] taskHolder = new io.papermc.paper.threadedregions.scheduler.ScheduledTask[1];
+        taskHolder[0] = FoliaScheduler.runOnEntityRepeating(lastEntity.getBukkitEntity(), () -> {
+                int runs = runsHolder[0];
+                LocationTag lastLocation = lastLocationHolder[0];
                 if (runs < maxTicks && lastEntity.isValid()) {
                     Vector v1 = lastEntity.getLocation().toVector();
                     Vector v3 = v2.clone().subtract(v1).normalize();
@@ -240,6 +243,8 @@ public class PushCommand extends AbstractCommand implements Holdable {
                     // Check if the entity is close to its destination
                     if (Math.abs(v2.getX() - v1.getX()) < 1.5f && Math.abs(v2.getY() - v1.getY()) < 1.5f && Math.abs(v2.getZ() - v1.getZ()) < 1.5f) {
                         runs = maxTicks;
+                        runsHolder[0] = runs;
+                        lastLocationHolder[0] = lastLocation;
                         return;
                     }
                     Vector newVel = v3.multiply(speed);
@@ -267,14 +272,17 @@ public class PushCommand extends AbstractCommand implements Holdable {
                     lastLocation = lastEntity.getLocation();
                 }
                 else {
-                    this.cancel();
+                    if (taskHolder[0] != null) {
+                        taskHolder[0].cancel();
+                    }
                     if (script != null) {
+                        final LocationTag lastLocationFinal = lastLocation;
                         Consumer<ScriptQueue> configure = (queue) -> {
                             if (lastEntity.getLocation() != null) {
                                 queue.addDefinition("location", lastEntity.getLocation());
                             }
                             else {
-                                queue.addDefinition("location", lastLocation);
+                                queue.addDefinition("location", lastLocationFinal);
                             }
                             queue.addDefinition("pushed_entities", entityList);
                             queue.addDefinition("last_entity", lastEntity);
@@ -283,9 +291,9 @@ public class PushCommand extends AbstractCommand implements Holdable {
                     }
                     scriptEntry.setFinished(true);
                 }
-            }
-        };
-        task.runTaskTimer(Denizen.getInstance(), 0, prec);
+                runsHolder[0] = runs;
+                lastLocationHolder[0] = lastLocation;
+        }, () -> {}, 0, prec);
     }
 
     public static boolean isSafeBlock(Location loc) {

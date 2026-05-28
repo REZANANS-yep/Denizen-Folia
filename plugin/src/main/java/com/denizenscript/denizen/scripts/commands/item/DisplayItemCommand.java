@@ -2,6 +2,7 @@ package com.denizenscript.denizen.scripts.commands.item;
 
 import com.denizenscript.denizen.Denizen;
 import com.denizenscript.denizen.nms.NMSHandler;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.utilities.command.TabCompleteHelper;
 import com.denizenscript.denizencore.utilities.debugging.Debug;
 import com.denizenscript.denizen.objects.EntityTag;
@@ -133,11 +134,12 @@ public class DisplayItemCommand extends AbstractCommand implements Listener {
     public void onItemDespawn(ItemDespawnEvent event) {
         if (protectedEntities.contains(event.getEntity().getUniqueId())) {
             event.setCancelled(true);
-            Bukkit.getScheduler().scheduleSyncDelayedTask(Denizen.getInstance(), () -> {
+            // Folia: acts on the item entity -> entity scheduler, 1 tick delay
+            FoliaScheduler.runOnEntityDelayed(event.getEntity(), () -> {
                 if (event.getEntity().isValid() && !event.getEntity().isDead()) {
                     NMSHandler.entityHelper.setTicksLived(event.getEntity(), -1000);
                 }
-            }, 1);
+            }, null, 1);
         }
     }
 
@@ -164,13 +166,14 @@ public class DisplayItemCommand extends AbstractCommand implements Listener {
         protectedEntities.add(itemUUID);
         scriptEntry.saveObject("dropped", new EntityTag(dropped));
         if (ticks > 0) {
-            Bukkit.getScheduler().scheduleSyncDelayedTask(Denizen.getInstance(),
+            // Folia: removal acts on the dropped item entity -> entity scheduler, delay = duration ticks
+            FoliaScheduler.runOnEntityDelayed(dropped,
                     () -> {
                         protectedEntities.remove(itemUUID);
                         if (dropped.isValid() && !dropped.isDead()) {
                             dropped.remove();
                         }
-                    }, ticks);
+                    }, null, ticks);
         }
     }
 }

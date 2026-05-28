@@ -2,6 +2,7 @@ package com.denizenscript.denizen.scripts.commands.world;
 
 import com.denizenscript.denizen.Denizen;
 import com.denizenscript.denizen.objects.*;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.utilities.Utilities;
 import com.denizenscript.denizen.utilities.blocks.*;
 import com.denizenscript.denizencore.utilities.debugging.Debug;
@@ -206,11 +207,13 @@ public class SchematicCommand extends AbstractCommand implements Holdable, Liste
             }
             finally {
                 if (delayed) {
-                    Bukkit.getScheduler().runTask(Denizen.instance, () -> schematic.isModifying = false);
+                    // runGlobal: flips the in-memory modifying flag back; thread-state bookkeeping that must hop off the async thread to the engine's global region.
+                    FoliaScheduler.runGlobal(() -> schematic.isModifying = false);
                 }
                 if (callback != null) {
                     if (delayed) {
-                        Bukkit.getScheduler().runTask(Denizen.instance, callback);
+                        // runGlobal: returns the rotation callback (setFinished / paste trigger) to the global region thread after async rotation.
+                        FoliaScheduler.runGlobal(callback);
                     }
                     else {
                         callback.run();
@@ -220,7 +223,8 @@ public class SchematicCommand extends AbstractCommand implements Holdable, Liste
         };
         if (delayed) {
             schematic.isModifying = true;
-            Bukkit.getScheduler().runTaskAsynchronously(Denizen.instance, rotateRunnable);
+            // runAsync: rotation of a large in-memory block set is CPU-heavy work kept off the tick threads to avoid lockup (matches upstream's async intent).
+            FoliaScheduler.runAsync(rotateRunnable);
         }
         else {
             rotateRunnable.run();
@@ -370,7 +374,8 @@ public class SchematicCommand extends AbstractCommand implements Holdable, Liste
                             scriptEntry.setFinished(true);
                         };
                         if (delayed) {
-                            Bukkit.getScheduler().runTask(Denizen.instance, storeSchem);
+                            // runGlobal: storing the parsed schematic in the shared map + setFinished is engine state; hop back to the global region from the async read.
+                            FoliaScheduler.runGlobal(storeSchem);
                         }
                         else {
                             storeSchem.run();
@@ -382,7 +387,8 @@ public class SchematicCommand extends AbstractCommand implements Holdable, Liste
                             Debug.echoError(scriptEntry, ex);
                         };
                         if (delayed) {
-                            Bukkit.getScheduler().runTask(Denizen.instance, showError);
+                            // runGlobal: error reporting hops back to the global region thread from the async read.
+                            FoliaScheduler.runGlobal(showError);
                         }
                         else {
                             showError.run();
@@ -392,7 +398,8 @@ public class SchematicCommand extends AbstractCommand implements Holdable, Liste
                     }
                 };
                 if (delayed) {
-                    Bukkit.getScheduler().runTaskAsynchronously(Denizen.instance, loadRunnable);
+                    // runAsync: reading and parsing the schematic file off disk is blocking I/O, kept off the tick threads.
+                    FoliaScheduler.runAsync(loadRunnable);
                 }
                 else {
                     loadRunnable.run();
@@ -575,19 +582,22 @@ public class SchematicCommand extends AbstractCommand implements Holdable, Liste
                         fs.close();
                     }
                     catch (Exception ex) {
-                        Bukkit.getScheduler().runTask(Denizen.instance, () -> {
+                        // runGlobal: error reporting hops back to the global region thread from the async write.
+                        FoliaScheduler.runGlobal(() -> {
                             Debug.echoError(scriptEntry, "Error saving schematic file " + fname + ".");
                             Debug.echoError(scriptEntry, ex);
                         });
                     }
-                    Bukkit.getScheduler().runTask(Denizen.instance, () -> {
+                    // runGlobal: decrementing the in-memory process counter + setFinished is engine state; hop back to the global region from the async write.
+                    FoliaScheduler.runGlobal(() -> {
                         set.readingProcesses--;
                         scriptEntry.setFinished(true);
                     });
                 };
                 if (delayed) {
                     set.readingProcesses++;
-                    Bukkit.getScheduler().runTaskAsynchronously(Denizen.instance, saveRunnable);
+                    // runAsync: writing the schematic file to disk is blocking I/O, kept off the tick threads.
+                    FoliaScheduler.runAsync(saveRunnable);
                 }
                 else {
                     scriptEntry.setFinished(true);

@@ -3,6 +3,7 @@ package com.denizenscript.denizen.scripts.containers.core;
 import com.denizenscript.denizen.Denizen;
 import com.denizenscript.denizen.utilities.command.scripted.DenizenAliasHelpTopic;
 import com.denizenscript.denizen.utilities.command.scripted.DenizenCommand;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.utilities.command.scripted.DenizenCommandHelpTopic;
 import com.denizenscript.denizencore.utilities.debugging.Debug;
 import com.google.common.base.Predicate;
@@ -17,7 +18,6 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.help.HelpMap;
 import org.bukkit.help.HelpTopic;
-import org.bukkit.scheduler.BukkitRunnable;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -86,16 +86,14 @@ public class CommandScriptHelper implements Listener {
             // Mojang's version.
             // TODO: figure out a different workaround?
             if (Settings.overrideHelp()) {
-                new BukkitRunnable() {
-                    @Override
-                    public void run() {
-                        if (knownCommands.get("help") instanceof HelpCommand) {
-                            return;
-                        }
-                        knownCommands.put("help", knownCommands.get("bukkit:help"));
-                        helpTopics.put("/help", helpTopics.get("/bukkit:help"));
+                // Folia: command/help-map registration data, server-wide -> global scheduler, 1 tick delay
+                FoliaScheduler.runGlobalDelayed(() -> {
+                    if (knownCommands.get("help") instanceof HelpCommand) {
+                        return;
                     }
-                }.runTaskLater(Denizen.getInstance(), 1);
+                    knownCommands.put("help", knownCommands.get("bukkit:help"));
+                    helpTopics.put("/help", helpTopics.get("/bukkit:help"));
+                }, 1);
             }
         }
         catch (Exception e) {

@@ -6,6 +6,8 @@ import com.denizenscript.denizen.npc.traits.TriggerTrait;
 import com.denizenscript.denizen.objects.NPCTag;
 import com.denizenscript.denizen.objects.PlayerTag;
 import com.denizenscript.denizen.scripts.triggers.AbstractTrigger;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import net.citizensnpcs.api.CitizensAPI;
 import net.citizensnpcs.api.npc.NPC;
 import net.citizensnpcs.api.npc.NPCRegistry;
@@ -81,12 +83,13 @@ public class ProximityTrigger extends AbstractTrigger implements Listener {
     // None
     //
     // -->
-    int taskID = -1;
+    ScheduledTask task = null;
 
     @Override
     public void onEnable() {
         Bukkit.getServer().getPluginManager().registerEvents(this, Denizen.getInstance());
-        taskID = Bukkit.getScheduler().scheduleSyncRepeatingTask(Denizen.getInstance(), () -> {
+        // Folia: scans all NPCs/players server-wide -> global scheduler, repeating with init=period=5
+        task = FoliaScheduler.runGlobalRepeating(() -> {
             if (timesUsed == 0) { // skip if not in use
                 return;
             }
@@ -108,6 +111,7 @@ public class ProximityTrigger extends AbstractTrigger implements Listener {
             }
         }, 5, 5);
     }
+
 
     public final void tryProcessSinglePair(NPCTag npc, TriggerTrait triggerTrait, Player bukkitPlayer) {
         boolean exitedProximity = hasExitedProximityOf(bukkitPlayer, npc);
@@ -187,7 +191,10 @@ public class ProximityTrigger extends AbstractTrigger implements Listener {
 
     @Override
     public void onDisable() {
-        Bukkit.getScheduler().cancelTask(taskID);
+        // Folia: cancel the stored global repeating task
+        if (task != null) {
+            task.cancel();
+        }
     }
 
     /**

@@ -1,16 +1,16 @@
 package com.denizenscript.denizen.scripts.commands.world;
 
-import com.denizenscript.denizen.Denizen;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.utilities.Utilities;
 import com.denizenscript.denizencore.utilities.debugging.Debug;
 import com.denizenscript.denizen.objects.WorldTag;
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import com.denizenscript.denizencore.exceptions.InvalidArgumentsException;
 import com.denizenscript.denizencore.objects.Argument;
 import com.denizenscript.denizencore.objects.core.DurationTag;
 import com.denizenscript.denizencore.objects.core.ElementTag;
 import com.denizenscript.denizencore.scripts.ScriptEntry;
 import com.denizenscript.denizencore.scripts.commands.AbstractCommand;
-import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 
 import java.util.HashMap;
@@ -122,7 +122,7 @@ public class TimeCommand extends AbstractCommand {
         scriptEntry.defaultObject("type", new ElementTag("GLOBAL"));
     }
 
-    public HashMap<UUID, Integer> resetTasks = new HashMap<>();
+    public HashMap<UUID, ScheduledTask> resetTasks = new HashMap<>();
 
     @Override
     public void execute(ScriptEntry scriptEntry) {
@@ -149,9 +149,9 @@ public class TimeCommand extends AbstractCommand {
                     player.resetPlayerTime();
                 }
                 else {
-                    Integer existingTask = resetTasks.get(player.getUniqueId());
+                    ScheduledTask existingTask = resetTasks.get(player.getUniqueId());
                     if (existingTask != null) {
-                        Bukkit.getScheduler().cancelTask(existingTask);
+                        existingTask.cancel();
                         resetTasks.remove(player.getUniqueId());
                     }
                     if (freeze == null || !freeze.asBoolean()) {
@@ -162,7 +162,8 @@ public class TimeCommand extends AbstractCommand {
                         player.setPlayerTime(value.getTicks(), false);
                     }
                     if (resetAfter != null) {
-                        int newTask = Bukkit.getScheduler().scheduleSyncDelayedTask(Denizen.getInstance(), player::resetPlayerTime, resetAfter.getTicks());
+                        // runOnEntityDelayed + saved ScheduledTask: player-personal time reset targets a specific Player entity and is cancellable.
+                        ScheduledTask newTask = FoliaScheduler.runOnEntityDelayed(player, player::resetPlayerTime, null, resetAfter.getTicks());
                         resetTasks.put(player.getUniqueId(), newTask);
                     }
                 }

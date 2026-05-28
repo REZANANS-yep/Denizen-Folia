@@ -2,6 +2,7 @@ package com.denizenscript.denizen.scripts.containers.core;
 
 import com.denizenscript.denizen.Denizen;
 import com.denizenscript.denizen.nms.abstracts.ImprovedOfflinePlayer;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.objects.InventoryTag;
 import com.denizenscript.denizen.utilities.Settings;
 import com.denizenscript.denizencore.DenizenCore;
@@ -85,9 +86,10 @@ public class InventoryScriptHelper implements Listener {
         }
         if (isGUI(event.getInventory())) {
             event.setCancelled(true);
-            Bukkit.getScheduler().scheduleSyncDelayedTask(Denizen.getInstance(), () -> {
+            // Folia: re-updating the clicking player's inventory -> entity scheduler on that player, 1 tick delay
+            FoliaScheduler.runOnEntityDelayed(event.getWhoClicked(), () -> {
                 ((Player) event.getWhoClicked()).updateInventory();
-            }, 1);
+            }, null, 1);
         }
     }
 

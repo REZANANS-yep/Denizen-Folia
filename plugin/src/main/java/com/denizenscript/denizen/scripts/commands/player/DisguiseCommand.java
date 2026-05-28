@@ -4,9 +4,11 @@ import com.denizenscript.denizen.Denizen;
 import com.denizenscript.denizen.nms.NMSHandler;
 import com.denizenscript.denizen.objects.EntityTag;
 import com.denizenscript.denizen.objects.PlayerTag;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.utilities.Utilities;
 import com.denizenscript.denizencore.utilities.debugging.Debug;
 import com.denizenscript.denizen.utilities.entity.FakeEntity;
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import com.denizenscript.denizen.utilities.packets.NetworkInterceptHelper;
 import com.denizenscript.denizencore.exceptions.InvalidArgumentsException;
 import com.denizenscript.denizencore.exceptions.InvalidArgumentsRuntimeException;
@@ -24,7 +26,6 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
-import org.bukkit.scheduler.BukkitRunnable;
 
 import java.util.*;
 
@@ -110,6 +111,8 @@ public class DisguiseCommand extends AbstractCommand {
 
         public FakeEntity fakeToSelf;
 
+        public ScheduledTask fakeMoveTask;
+
         public FakeEntity toOthers;
 
         public boolean shouldFake;
@@ -159,17 +162,18 @@ public class DisguiseCommand extends AbstractCommand {
             fakeToSelf = FakeEntity.showFakeEntityTo(Collections.singletonList(player), as, player.getLocation(), null, null);
             NMSHandler.packetHelper.generateNoCollideTeam(player.getPlayerEntity(), fakeToSelf.entity.getUUID());
             NMSHandler.packetHelper.sendEntityMetadataFlagsUpdate(player.getPlayerEntity(), player.getPlayerEntity());
-            new BukkitRunnable() {
-                @Override
-                public void run() {
-                    if (fakeToSelf == null || !fakeToSelf.entity.isFakeValid || !player.isOnline()) {
-                        stopFake(player);
-                        cancel();
-                        return;
-                    }
-                    moveFakeNow(player.getLocation());
-                }
-            }.runTaskTimer(Denizen.getInstance(), 1, 1);
+            // Folia: per-player fake-entity move tracking -> entity scheduler on the viewing player, repeating every tick from 1
+            fakeMoveTask = FoliaScheduler.runOnEntityRepeating(player.getPlayerEntity(),
+                    () -> {
+                        if (fakeToSelf == null || !fakeToSelf.entity.isFakeValid || !player.isOnline()) {
+                            stopFake(player);
+                            if (fakeMoveTask != null) {
+                                fakeMoveTask.cancel();
+                            }
+                            return;
+                        }
+                        moveFakeNow(player.getLocation());
+                    }, null, 1, 1);
         }
 
         public void stopFake(PlayerTag player) {
@@ -178,14 +182,12 @@ public class DisguiseCommand extends AbstractCommand {
             }
             if (player.isOnline()) {
                 NMSHandler.packetHelper.removeNoCollideTeam(player.getPlayerEntity(), fakeToSelf.entity.getUUID());
-                new BukkitRunnable() {
-                    @Override
-                    public void run() {
-                        if (player.isOnline()) {
-                            NMSHandler.packetHelper.sendEntityMetadataFlagsUpdate(player.getPlayerEntity(), player.getPlayerEntity());
-                        }
+                // Folia: metadata update sent to the player -> entity scheduler on that player, 2 tick delay
+                FoliaScheduler.runOnEntityDelayed(player.getPlayerEntity(), () -> {
+                    if (player.isOnline()) {
+                        NMSHandler.packetHelper.sendEntityMetadataFlagsUpdate(player.getPlayerEntity(), player.getPlayerEntity());
                     }
-                }.runTaskLater(Denizen.getInstance(), 2);
+                }, null, 2);
             }
             fakeToSelf.cancelEntity();
             fakeToSelf = null;
@@ -229,15 +231,13 @@ public class DisguiseCommand extends AbstractCommand {
             if (!shouldFake || !event.getPlayer().getUniqueId().equals(entity.getUUID())) {
                 return;
             }
-            new BukkitRunnable() {
-                @Override
-                public void run() {
-                    if (!event.getPlayer().isOnline() || !isActive) {
-                        return;
-                    }
-                    startFake(new PlayerTag(event.getPlayer()));
+            // Folia: deferred startFake for the joining player -> entity scheduler on that player, 2 tick delay
+            FoliaScheduler.runOnEntityDelayed(event.getPlayer(), () -> {
+                if (!event.getPlayer().isOnline() || !isActive) {
+                    return;
                 }
-            }.runTaskLater(Denizen.getInstance(), 2);
+                startFake(new PlayerTag(event.getPlayer()));
+            }, null, 2);
         }
 
         @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -246,15 +246,13 @@ public class DisguiseCommand extends AbstractCommand {
                 return;
             }
             stopFake(new PlayerTag(event.getPlayer()));
-            new BukkitRunnable() {
-                @Override
-                public void run() {
-                    if (!event.getPlayer().isOnline() || !isActive) {
-                        return;
-                    }
-                    startFake(new PlayerTag(event.getPlayer()));
+            // Folia: deferred re-startFake after teleport -> entity scheduler on that player, 2 tick delay
+            FoliaScheduler.runOnEntityDelayed(event.getPlayer(), () -> {
+                if (!event.getPlayer().isOnline() || !isActive) {
+                    return;
                 }
-            }.runTaskLater(Denizen.getInstance(), 2);
+                startFake(new PlayerTag(event.getPlayer()));
+            }, null, 2);
         }
 
 

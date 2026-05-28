@@ -6,6 +6,7 @@ import com.denizenscript.denizen.nms.NMSVersion;
 import com.denizenscript.denizen.objects.EntityTag;
 import com.denizenscript.denizen.objects.LocationTag;
 import com.denizenscript.denizen.utilities.BukkitImplDeprecations;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.utilities.PaperAPITools;
 import com.denizenscript.denizen.utilities.Utilities;
 import com.denizenscript.denizen.utilities.packets.NetworkInterceptHelper;
@@ -80,7 +81,7 @@ public class LookCommand extends AbstractCommand {
     // - look <player> <npc.location> duration:10s
     // -->
 
-    public static HashMap<UUID, BukkitTask> lookTasks = new HashMap<>();
+    public static HashMap<UUID, io.papermc.paper.threadedregions.scheduler.ScheduledTask> lookTasks = new HashMap<>();
 
     public static void autoExecute(ScriptEntry scriptEntry,
                                    @ArgName("entities") @ArgDefaultNull @ArgLinear ObjectTag entitiesObj,
@@ -108,7 +109,7 @@ public class LookCommand extends AbstractCommand {
         }
         for (EntityTag entity : entities) {
             if (entity.isSpawned()) {
-                BukkitTask task = lookTasks.remove(entity.getUUID());
+                io.papermc.paper.threadedregions.scheduler.ScheduledTask task = lookTasks.remove(entity.getUUID());
                 if (task != null) {
                     task.cancel();
                 }
@@ -171,28 +172,31 @@ public class LookCommand extends AbstractCommand {
             }
         }
         if (duration != null && duration.getTicks() > 1) {
+            final DurationTag durationFinal = duration;
             for (EntityTag entity : entities) {
-                BukkitRunnable task = new BukkitRunnable() {
-                    long bounces = 0;
-                    public void run() {
-                        bounces++;
-                        if (bounces > duration.getTicks()) {
-                            this.cancel();
-                            lookTasks.remove(entity.getUUID());
-                            return;
+                final EntityTag entityFinal = entity;
+                // Folia: per-entity repeating task faces/rotates that specific entity -> runOnEntityRepeating on that entity.
+                final long[] bounces = new long[]{0};
+                final io.papermc.paper.threadedregions.scheduler.ScheduledTask[] taskHolder = new io.papermc.paper.threadedregions.scheduler.ScheduledTask[1];
+                taskHolder[0] = FoliaScheduler.runOnEntityRepeating(entityFinal.getBukkitEntity(), () -> {
+                    bounces[0]++;
+                    if (bounces[0] > durationFinal.getTicks()) {
+                        if (taskHolder[0] != null) {
+                            taskHolder[0].cancel();
                         }
-                        if (entity.isSpawned()) {
-                            if (loc != null) {
-                                NMSHandler.entityHelper.faceLocation(entity.getBukkitEntity(), loc);
-                            }
-                            else {
-                                NMSHandler.entityHelper.rotate(entity.getBukkitEntity(), yawRaw, pitchRaw);
-                            }
+                        lookTasks.remove(entityFinal.getUUID());
+                        return;
+                    }
+                    if (entityFinal.isSpawned()) {
+                        if (loc != null) {
+                            NMSHandler.entityHelper.faceLocation(entityFinal.getBukkitEntity(), loc);
+                        }
+                        else {
+                            NMSHandler.entityHelper.rotate(entityFinal.getBukkitEntity(), yawRaw, pitchRaw);
                         }
                     }
-                };
-                BukkitTask newTask = task.runTaskTimer(Denizen.getInstance(), 0, 1);
-                lookTasks.put(entity.getUUID(), newTask);
+                }, () -> {}, 0, 1);
+                lookTasks.put(entityFinal.getUUID(), taskHolder[0]);
             }
         }
     }

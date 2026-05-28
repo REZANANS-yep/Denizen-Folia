@@ -1,6 +1,7 @@
 package com.denizenscript.denizen.scripts.commands.world;
 
 import com.denizenscript.denizen.Denizen;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.utilities.Settings;
 import com.denizenscript.denizen.utilities.Utilities;
 import com.denizenscript.denizencore.exceptions.InvalidArgumentsException;
@@ -239,12 +240,14 @@ public class CreateWorldCommand extends AbstractCommand implements Holdable {
             scriptEntry.setFinished(true);
         };
         if (scriptEntry.shouldWaitFor() && copy_from != null) {
-            Bukkit.getScheduler().runTaskAsynchronously(Denizen.getInstance(), () -> {
+            // runAsync: copying world files off disk is blocking I/O that must never touch a tick thread.
+            FoliaScheduler.runAsync(() -> {
                 if (!copyRunnable.get()) {
                     scriptEntry.setFinished(true);
                     return;
                 }
-                Bukkit.getScheduler().runTask(Denizen.getInstance(), createRunnable);
+                // runGlobal: world creation is server-wide state (not tied to any existing region) and must run on a tick thread.
+                FoliaScheduler.runGlobal(createRunnable);
             });
         }
         else {

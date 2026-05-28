@@ -12,6 +12,7 @@ import com.denizenscript.denizen.npc.traits.TriggerTrait;
 import com.denizenscript.denizen.objects.NPCTag;
 import com.denizenscript.denizen.objects.PlayerTag;
 import com.denizenscript.denizen.scripts.triggers.AbstractTrigger;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.tags.BukkitTagContext;
 import com.denizenscript.denizencore.objects.core.ElementTag;
 import com.denizenscript.denizencore.objects.ArgumentHelper;
@@ -28,7 +29,7 @@ import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.event.player.PlayerChatEvent;
 
 import java.util.*;
-import java.util.concurrent.FutureTask;
+import java.util.concurrent.CompletableFuture;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -346,8 +347,12 @@ public class ChatTrigger extends AbstractTrigger implements Listener {
             syncChatTrigger(new PlayerChatEvent(event.getPlayer(), event.getMessage(), event.getFormat(), event.getRecipients()));
             return;
         }
-        FutureTask<ChatContext> futureTask = new FutureTask<>(() -> process(event.getPlayer(), event.getMessage()));
-        Bukkit.getScheduler().runTask(Denizen.getInstance(), futureTask);
+        // Folia: process() reads the chatting player's location/LOS/facing vs nearby NPC -> entity scheduler on that player.
+        // Called from the async chat thread, so blocking .get() is safe (preserves original sync-bridge behavior).
+        CompletableFuture<ChatContext> futureTask = new CompletableFuture<>();
+        FoliaScheduler.runOnEntity(event.getPlayer(),
+                () -> futureTask.complete(process(event.getPlayer(), event.getMessage())),
+                () -> futureTask.complete(new ChatContext(false))); // retired (player gone): unblock waiting async thread
         try {
             ChatContext context = futureTask.get();
             if (context.wasTriggered()) {

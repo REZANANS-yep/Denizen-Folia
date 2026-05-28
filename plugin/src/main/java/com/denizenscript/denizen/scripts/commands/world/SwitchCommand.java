@@ -1,7 +1,7 @@
 package com.denizenscript.denizen.scripts.commands.world;
 
-import com.denizenscript.denizen.Denizen;
 import com.denizenscript.denizen.nms.NMSHandler;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.objects.MaterialTag;
 import com.denizenscript.denizen.objects.properties.material.MaterialSwitchable;
 import com.denizenscript.denizencore.utilities.debugging.Debug;
@@ -13,7 +13,7 @@ import com.denizenscript.denizencore.objects.core.ElementTag;
 import com.denizenscript.denizencore.objects.core.ListTag;
 import com.denizenscript.denizencore.scripts.ScriptEntry;
 import com.denizenscript.denizencore.scripts.commands.AbstractCommand;
-import org.bukkit.Bukkit;
+import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Bell;
@@ -84,7 +84,7 @@ public class SwitchCommand extends AbstractCommand {
 
     private enum SwitchState {ON, OFF, TOGGLE}
 
-    private Map<Location, Integer> taskMap = new HashMap<>(32);
+    private Map<Location, ScheduledTask> taskMap = new HashMap<>(32);
 
     @Override
     public void addCustomTabCompletions(TabCompletionsBuilder tab) {
@@ -139,14 +139,14 @@ public class SwitchCommand extends AbstractCommand {
                 // If this block already had a delayed task, cancel it.
                 if (taskMap.containsKey(interactLocation)) {
                     try {
-                        Bukkit.getScheduler().cancelTask(taskMap.get(interactLocation));
+                        taskMap.get(interactLocation).cancel();
                     }
                     catch (Exception e) {
                     }
                 }
                 Debug.echoDebug(scriptEntry, "Setting delayed task 'SWITCH' for " + interactLocation.identify());
-                // Store new delayed task ID, for checking against, then schedule new delayed task.
-                taskMap.put(interactLocation, Bukkit.getScheduler().scheduleSyncDelayedTask(Denizen.getInstance(), () -> switchBlock(scriptEntry, interactLocation, SwitchState.TOGGLE, physics), duration.getTicks()));
+                // runOnRegionDelayed + saved ScheduledTask: the deferred toggle mutates a block at this specific location, so it must run on that region's thread, and is cancellable.
+                taskMap.put(interactLocation, FoliaScheduler.runOnRegionDelayed(interactLocation, () -> switchBlock(scriptEntry, interactLocation, SwitchState.TOGGLE, physics), duration.getTicks()));
             }
         }
     }
