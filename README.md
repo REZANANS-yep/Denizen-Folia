@@ -20,7 +20,7 @@
 </p>
 <p align="center">
   <b>Этот форк развивается на <a href="https://pterohost.com">Pterohost</a></b><br>
-  Игровой хостинг с поддержкой Folia, Paper и Pterodactyl-панелью.<br>
+  Игровой хостинг с поддержкой Folia, Paper и панелью YourControl.<br>
   <i>Developed on <a href="https://pterohost.com">Pterohost</a> - game server hosting with Folia/Paper support.</i>
 </p>
 
