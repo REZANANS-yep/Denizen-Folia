@@ -1,18 +1,18 @@
 package com.denizenscript.denizen.npc.traits;
 
-import com.denizenscript.denizen.Denizen;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import net.citizensnpcs.api.npc.NPC;
 import net.citizensnpcs.api.persistence.Persist;
 import net.citizensnpcs.api.trait.Trait;
 import net.citizensnpcs.trait.ArmorStandTrait;
 import net.citizensnpcs.util.NMS;
 import org.bukkit.entity.ArmorStand;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.event.Listener;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
-import org.bukkit.scheduler.BukkitRunnable;
 
 public class InvisibleTrait extends Trait implements Listener {
 
@@ -100,19 +100,27 @@ public class InvisibleTrait extends Trait implements Listener {
             setInvisible();
             // Workaround bug in Citizens on Paper servers - NPCs don't seem to actually spawn at startup til several ticks *after* the spawn event (2022/03/12)
             if (!npc.isSpawned()) {
-                new BukkitRunnable() {
-                    int ticks = 0;
-                    @Override
-                    public void run() {
-                        if (ticks++ > 80) {
-                            return;
+                // Folia: poll spawn-state on the global thread (entity may not exist yet, so no entity scheduler available);
+                // once spawned, route the entity-touching setInvisible onto the entity's owning thread. init 1, period 1 preserved.
+                final io.papermc.paper.threadedregions.scheduler.ScheduledTask[] task = new io.papermc.paper.threadedregions.scheduler.ScheduledTask[1];
+                final int[] ticks = {0};
+                task[0] = FoliaScheduler.runGlobalRepeating(() -> {
+                    if (ticks[0]++ > 80) {
+                        if (task[0] != null) {
+                            task[0].cancel();
                         }
-                        if (npc.isSpawned()) {
-                            setInvisible();
-                            cancel();
+                        return;
+                    }
+                    if (npc.isSpawned()) {
+                        Entity ent = npc.getEntity();
+                        if (ent != null) {
+                            FoliaScheduler.runOnEntity(ent, this::setInvisible);
+                        }
+                        if (task[0] != null) {
+                            task[0].cancel();
                         }
                     }
-                }.runTaskTimer(Denizen.getInstance(), 1, 1);
+                }, 1, 1);
             }
         }
     }

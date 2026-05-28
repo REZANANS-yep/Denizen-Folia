@@ -1,6 +1,6 @@
 package com.denizenscript.denizen.npc.traits;
 
-import com.denizenscript.denizen.Denizen;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.objects.NPCTag;
 import com.denizenscript.denizen.objects.PlayerTag;
 import com.denizenscript.denizencore.utilities.CoreUtilities;
@@ -9,7 +9,6 @@ import net.citizensnpcs.api.event.NPCPushEvent;
 import net.citizensnpcs.api.persistence.Persist;
 import net.citizensnpcs.api.trait.Trait;
 import net.citizensnpcs.util.NMS;
-import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
@@ -168,12 +167,12 @@ public class PushableTrait extends Trait implements Listener {
             if (!pushed && returnable) {
                 pushed = true;
                 returnLocation = npc.getStoredLocation().clone();
-                Bukkit.getServer().getScheduler().scheduleSyncDelayedTask(
-                        Denizen.getInstance(), () -> {
-                            if (npc.isSpawned()) {
-                                navigateBack();
-                            }
-                        }, delay * 20L);
+                // Folia: navigateBack drives this NPC's navigation -> entity thread; delay*20 ticks preserved
+                FoliaScheduler.runOnEntityDelayed(npc.getEntity(), () -> {
+                    if (npc.isSpawned()) {
+                        navigateBack();
+                    }
+                }, null, delay * 20L);
             }
         }
     }

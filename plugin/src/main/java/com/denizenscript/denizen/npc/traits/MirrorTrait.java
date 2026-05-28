@@ -1,12 +1,11 @@
 package com.denizenscript.denizen.npc.traits;
 
-import com.denizenscript.denizen.Denizen;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.nms.abstracts.ProfileEditor;
 import com.denizenscript.denizen.utilities.packets.NetworkInterceptHelper;
 import net.citizensnpcs.api.event.DespawnReason;
 import net.citizensnpcs.api.persistence.Persist;
 import net.citizensnpcs.api.trait.Trait;
-import org.bukkit.Bukkit;
 import org.bukkit.Location;
 
 import java.util.UUID;
@@ -21,11 +20,16 @@ public class MirrorTrait extends Trait {
     }
 
     public void respawn() {
-        Bukkit.getScheduler().scheduleSyncDelayedTask(Denizen.getInstance(), () -> {
+        // Folia: outer step despawns the existing NPC entity -> run on its owning thread (no-op if already gone)
+        if (npc.getEntity() == null) {
+            return;
+        }
+        FoliaScheduler.runOnEntity(npc.getEntity(), () -> {
             if (npc.isSpawned()) {
                 Location loc = npc.getStoredLocation().clone();
                 npc.despawn(DespawnReason.PENDING_RESPAWN);
-                Bukkit.getScheduler().scheduleSyncDelayedTask(Denizen.getInstance(), () -> {
+                // Folia: re-spawn happens at the stored location's region (entity no longer exists post-despawn)
+                FoliaScheduler.runOnRegion(loc, () -> {
                     npc.spawn(loc);
                 });
             }

@@ -1,6 +1,6 @@
 package com.denizenscript.denizen.npc.traits;
 
-import com.denizenscript.denizen.Denizen;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.objects.LocationTag;
 import com.denizenscript.denizen.objects.NPCTag;
 import com.denizenscript.denizen.utilities.Settings;
@@ -13,7 +13,6 @@ import net.citizensnpcs.api.CitizensAPI;
 import net.citizensnpcs.api.event.DespawnReason;
 import net.citizensnpcs.api.persistence.Persist;
 import net.citizensnpcs.api.trait.Trait;
-import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.event.EventHandler;
@@ -130,7 +129,7 @@ public class HealthTrait extends Trait implements Listener {
         return animatedeath;
     }
 
-    public Integer void_watcher_task = null;
+    public io.papermc.paper.threadedregions.scheduler.ScheduledTask void_watcher_task = null;
 
     /**
      * Listens for spawn of an NPC and updates its health with the max health
@@ -141,9 +140,13 @@ public class HealthTrait extends Trait implements Listener {
         dying = false;
         setHealth();
 
-        void_watcher_task = Bukkit.getScheduler().scheduleSyncRepeatingTask(Denizen.getInstance(), () -> {
+        // Folia: void-watcher reads/teleports/respawns the NPC entity, runs on its owning thread; 200/200 tick cadence preserved.
+        // retired callback null: when the entity is gone the task stops itself anyway, and Folia ends entity tasks on removal.
+        void_watcher_task = FoliaScheduler.runOnEntityRepeating(npc.getEntity(), () -> {
             if (!npc.isSpawned()) {
-                Bukkit.getScheduler().cancelTask(void_watcher_task);
+                if (void_watcher_task != null) {
+                    void_watcher_task.cancel();
+                }
                 return;
             }
             if (npc.getStoredLocation().getY() < -1000) {
@@ -161,7 +164,7 @@ public class HealthTrait extends Trait implements Listener {
                     }
                 }
             }
-        }, 200, 200);
+        }, null, 200, 200);
 
     }
 
@@ -287,7 +290,8 @@ public class HealthTrait extends Trait implements Listener {
         //die();
 
         if (respawn && (getRespawnDelay().getTicks() > 0)) {
-            Bukkit.getServer().getScheduler().scheduleSyncDelayedTask(Denizen.getInstance(),
+            // Folia: respawning the NPC happens at the respawn location's region; respawn-delay ticks preserved.
+            FoliaScheduler.runOnRegionDelayed(loc,
                     () -> {
                         if (CitizensAPI.getNPCRegistry().getById(npc.getId()) == null || npc.isSpawned()) {
                             return;

@@ -1,6 +1,7 @@
 package com.denizenscript.denizen.npc.traits;
 
 import com.denizenscript.denizen.Denizen;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.objects.ChunkTag;
 import com.denizenscript.denizen.objects.LocationTag;
 import com.denizenscript.denizen.objects.NPCTag;
@@ -15,7 +16,6 @@ import net.citizensnpcs.api.util.Messaging;
 import net.citizensnpcs.trait.ArmorStandTrait;
 import net.citizensnpcs.trait.ClickRedirectTrait;
 import net.citizensnpcs.util.NMS;
-import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.entity.ArmorStand;
@@ -26,7 +26,6 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.metadata.FixedMetadataValue;
-import org.bukkit.scheduler.BukkitRunnable;
 
 public class SittingTrait extends Trait implements Listener {
 
@@ -61,11 +60,21 @@ public class SittingTrait extends Trait implements Listener {
     @Override
     public void onSpawn() {
         if (!sitting) {
-            Bukkit.getScheduler().scheduleSyncDelayedTask(Denizen.instance, () -> {
-                if (!sitting && npc != null) {
-                    npc.removeTrait(SittingTrait.class);
-                }
-            }, 1);
+            // Folia: trait removal tied to this NPC's entity, 1-tick delay preserved
+            if (npc.getEntity() != null) {
+                FoliaScheduler.runOnEntityDelayed(npc.getEntity(), () -> {
+                    if (!sitting && npc != null) {
+                        npc.removeTrait(SittingTrait.class);
+                    }
+                }, null, 1);
+            }
+            else {
+                FoliaScheduler.runGlobalDelayed(() -> {
+                    if (!sitting && npc != null) {
+                        npc.removeTrait(SittingTrait.class);
+                    }
+                }, 1);
+            }
             return;
         }
         hasSpawned = true;
@@ -76,7 +85,8 @@ public class SittingTrait extends Trait implements Listener {
             chairLocation = chairLocation.clone();
             chairLocation.setYaw(npc.getStoredLocation().getYaw());
             chairLocation.setPitch(npc.getStoredLocation().getPitch());
-            Bukkit.getScheduler().scheduleSyncDelayedTask(Denizen.getInstance(), () -> sit(chairLocation), 1);
+            // Folia: sit acts on the NPC entity, 1-tick delay preserved
+            FoliaScheduler.runOnEntityDelayed(npc.getEntity(), () -> sit(chairLocation), null, 1);
         }
     }
 
@@ -270,47 +280,48 @@ public class SittingTrait extends Trait implements Listener {
             }
             else {
                 Messaging.debug("(Denizen/SittingTrait) retrying failed sit for", npc.getId());
-                Bukkit.getScheduler().scheduleSyncDelayedTask(Denizen.getInstance(), () -> { if (npc.isSpawned()) { forceEntitySit(entity, location, retryCount + 1); } }, 5);
+                // Folia: sit retry acts on the sitting entity, 5-tick delay preserved
+                FoliaScheduler.runOnEntityDelayed(entity, () -> { if (npc.isSpawned()) { forceEntitySit(entity, location, retryCount + 1); } }, null, 5);
             }
             return;
         }
         holder.data().set("is-denizen-seat", true);
-        new BukkitRunnable() {
-            @Override
-            public void cancel() {
-                super.cancel();
-                if (entity.isValid() && entity.hasMetadata("denizen.sitting")) {
-                    entity.removeMetadata("denizen.sitting", Denizen.getInstance());
-                }
-                if (holder.getTraits().iterator().hasNext()) { // Hacky NPC-already-removed test
-                    holder.destroy();
-                }
-                if (sitStandNPC == holder) {
-                    sitStandNPC = null;
-                }
+        // Folia: passenger-maintenance loop runs on the sitting entity's owning thread, every tick (init 0 -> clamped to 1 by helper)
+        final io.papermc.paper.threadedregions.scheduler.ScheduledTask[] sitTask = new io.papermc.paper.threadedregions.scheduler.ScheduledTask[1];
+        // Replaces the old BukkitRunnable.cancel() override: cleanup + stop the repeating task.
+        final Runnable stopSit = () -> {
+            if (sitTask[0] != null) {
+                sitTask[0].cancel();
             }
-
-            @Override
-            public void run() {
-                if (holder != sitStandNPC) {
-                    cancel();
-                }
-                else if (!holder.getTraits().iterator().hasNext()) { // Hacky NPC-already-removed test
-                    cancel();
-                }
-                else if (!entity.isValid() || !entity.hasMetadata("denizen.sitting") || !entity.getMetadata("denizen.sitting").get(0).asBoolean()) {
-                    cancel();
-                }
-                else if (npc != null && !npc.isSpawned()) {
-                    cancel();
-                }
-                else if (!holder.isSpawned()) {
-                    cancel();
-                }
-                else if (!NMS.getPassengers(holder.getEntity()).contains(entity)) {
-                    holder.getEntity().addPassenger(entity);
-                }
+            if (entity.isValid() && entity.hasMetadata("denizen.sitting")) {
+                entity.removeMetadata("denizen.sitting", Denizen.getInstance());
             }
-        }.runTaskTimer(Denizen.getInstance(), 0, 1);
+            if (holder.getTraits().iterator().hasNext()) { // Hacky NPC-already-removed test
+                holder.destroy();
+            }
+            if (sitStandNPC == holder) {
+                sitStandNPC = null;
+            }
+        };
+        sitTask[0] = FoliaScheduler.runOnEntityRepeating(entity, () -> {
+            if (holder != sitStandNPC) {
+                stopSit.run();
+            }
+            else if (!holder.getTraits().iterator().hasNext()) { // Hacky NPC-already-removed test
+                stopSit.run();
+            }
+            else if (!entity.isValid() || !entity.hasMetadata("denizen.sitting") || !entity.getMetadata("denizen.sitting").get(0).asBoolean()) {
+                stopSit.run();
+            }
+            else if (npc != null && !npc.isSpawned()) {
+                stopSit.run();
+            }
+            else if (!holder.isSpawned()) {
+                stopSit.run();
+            }
+            else if (!NMS.getPassengers(holder.getEntity()).contains(entity)) {
+                holder.getEntity().addPassenger(entity);
+            }
+        }, stopSit, 0, 1);
     }
 }

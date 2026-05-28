@@ -1,6 +1,7 @@
 package com.denizenscript.denizen.npc.traits;
 
 import com.denizenscript.denizen.Denizen;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.objects.NPCTag;
 import com.denizenscript.denizen.objects.PlayerTag;
 import com.denizenscript.denizen.scripts.commands.npc.EngageCommand;
@@ -15,7 +16,6 @@ import net.citizensnpcs.api.trait.Trait;
 import net.citizensnpcs.api.util.DataKey;
 import net.citizensnpcs.api.util.Paginator;
 import net.citizensnpcs.util.Messages;
-import org.bukkit.Bukkit;
 import org.bukkit.command.CommandSender;
 import org.bukkit.event.Listener;
 
@@ -69,7 +69,8 @@ public class TriggerTrait extends Trait implements Listener {
     public void load(DataKey key) {
         if (!key.keyExists("properly_set") && key.keyExists("enabled")) {
             for (final String triggerName : Denizen.getInstance().triggerRegistry.list().keySet()) {
-                Bukkit.getScheduler().scheduleSyncDelayedTask(Denizen.getInstance(), () -> properly_set.put(triggerName, key.getBoolean("enabled." + triggerName)));
+                // Folia: pure trait-data update (no entity/world touch) -> global region, next tick
+                FoliaScheduler.runGlobal(() -> properly_set.put(triggerName, key.getBoolean("enabled." + triggerName)));
             }
         }
     }

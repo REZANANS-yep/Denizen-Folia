@@ -1,12 +1,11 @@
 package com.denizenscript.denizen.npc.traits;
 
-import com.denizenscript.denizen.Denizen;
+import com.denizenscript.denizen.utilities.FoliaScheduler;
 import com.denizenscript.denizen.nms.NMSHandler;
 import com.denizenscript.denizen.utilities.Utilities;
 import com.denizenscript.denizencore.utilities.debugging.Debug;
 import net.citizensnpcs.api.persistence.Persist;
 import net.citizensnpcs.api.trait.Trait;
-import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.block.data.type.Bed;
 import org.bukkit.entity.LivingEntity;
@@ -31,7 +30,8 @@ public class SleepingTrait extends Trait {
         }
         if (!Utilities.checkLocation((LivingEntity) npc.getEntity(), bedLocation, 2)) {
             wakeUp();
-            Bukkit.getScheduler().scheduleSyncDelayedTask(Denizen.getInstance(), () -> {
+            // Folia: trait removal tied to this NPC's entity (run() already guards isSpawned), next tick
+            FoliaScheduler.runOnEntity(npc.getEntity(), () -> {
                 if (npc.hasTrait(SleepingTrait.class) && !npc.getOrAddTrait(SleepingTrait.class).isSleeping()) {
                     npc.removeTrait(SleepingTrait.class);
                 }
